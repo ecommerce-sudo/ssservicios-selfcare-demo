@@ -4,6 +4,8 @@ import helmet from "helmet";
 import dotenv from "dotenv";
 import { listOrdersByClient, createOrder, addOrderEvent } from "./orders.js";
 import { anatodGetClienteById } from "./anatod.js";
+import { sumActiveReservations, createReservation } from "./reservations.js";
+
 
 
 
@@ -40,7 +42,8 @@ app.get("/v1/me", async (_req, res) => {
     const c = await anatodGetClienteById(DEMO_CLIENT_ID);
 
     // Reservas pendientes en Neon: por ahora 0 (etapa siguiente)
-    const reserved = 0;
+   const reserved = await sumActiveReservations(Number(DEMO_CLIENT_ID));
+
 
     const official = c.financiable; // "clienteScoringFinanciable" parseado a number
     const available = Math.max(official - reserved, 0);
