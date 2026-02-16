@@ -3,6 +3,8 @@ import cors from "cors";
 import helmet from "helmet";
 import dotenv from "dotenv";
 import { listOrdersByClient, createOrder, addOrderEvent } from "./orders.js";
+import { anatodGetClienteById } from "./anatod.js";
+
 
 
 dotenv.config();
@@ -33,17 +35,35 @@ app.get("/health", (_req, res) => {
     ts: new Date().toISOString(),
   });
 });
-// Demo: "me" (por ahora sin Aria real: devolvemos el clientId y un disponible mock)
-// Luego lo conectamos a Aria con tu token.
-app.get("/v1/me", (_req, res) => {
-  res.json({
-    clientId: DEMO_CLIENT_ID,
-    name: "Mosca Javier",
-    purchaseAvailable: 0,
-    currency: "ARS",
-    note: "purchaseAvailable mock; luego lo traemos desde Aria",
-  });
+app.get("/v1/me", async (_req, res) => {
+  try {
+    const c = await anatodGetClienteById(DEMO_CLIENT_ID);
+
+    // Reservas pendientes en Neon: por ahora 0 (etapa siguiente)
+    const reserved = 0;
+
+    const official = c.financiable; // "clienteScoringFinanciable" parseado a number
+    const available = Math.max(official - reserved, 0);
+
+    res.json({
+      clientId: Number(DEMO_CLIENT_ID),
+      name: c.fullName || "Cliente",
+      purchaseAvailableOfficial: official,
+      purchaseAvailableReserved: reserved,
+      purchaseAvailable: available,
+      currency: "ARS",
+      source: "anatod:/cliente/{id}"
+    });
+  } catch (err: any) {
+    console.error(err);
+    res.status(502).json({
+      ok: false,
+      error: "ANATOD_ERROR",
+      detail: String(err?.message ?? err)
+    });
+  }
 });
+
 // TEMP: crear una orden demo desde el navegador (luego lo borramos)
 app.get("/v1/me/orders/demo-create", async (req, res) => {
   try {
