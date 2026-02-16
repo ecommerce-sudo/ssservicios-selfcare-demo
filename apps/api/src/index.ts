@@ -2,11 +2,15 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import dotenv from "dotenv";
-import { createAriaAdditionalStrict } from "./adicional.js";
 
 import { listOrdersByClient, createOrder, addOrderEvent } from "./orders.js";
 import { anatodGetClienteById } from "./anatod.js";
-import { sumActiveReservations, createReservation } from "./reservations.js";
+import {
+  sumActiveReservations,
+  createReservation,
+  setReservationStatus,
+} from "./reservations.js";
+import { createAriaAdditionalStrict } from "./adicional.js";
 
 dotenv.config();
 
@@ -43,7 +47,7 @@ app.get("/v1/me", async (_req, res) => {
   try {
     const c = await anatodGetClienteById(DEMO_CLIENT_ID);
 
-    // Reservas pendientes (Neon)
+    // Reservas pendientes (Neon): solo ACTIVE
     const reserved = await sumActiveReservations(Number(DEMO_CLIENT_ID));
 
     const official = c.financiable; // "clienteScoringFinanciable" parseado a number
@@ -90,9 +94,31 @@ app.get("/v1/me/reservations/demo-add", async (req, res) => {
     res.status(201).json({ ok: true, reservation: row });
   } catch (err: any) {
     console.error(err);
-    res.status(500).json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
+    res
+      .status(500)
+      .json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
   }
 });
+
+// TEMP: liberar una reserva (por si querés "rollback" demo)
+// Uso: /v1/me/reservations/demo-release?id=res_123
+app.get("/v1/me/reservations/demo-release", async (req, res) => {
+  try {
+    const id = String(req.query.id ?? "").trim();
+    if (!id) return res.status(400).json({ ok: false, error: "MISSING_ID" });
+
+    const updated = await setReservationStatus(id, "RELEASED");
+    if (!updated) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+
+    res.json({ ok: true, reservation: updated });
+  } catch (err: any) {
+    console.error(err);
+    res
+      .status(500)
+      .json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
+  }
+});
+
 // COMPRA FINANCIADA (DEMO REAL): crea order + reserva + adicional (3 cuotas)
 // Uso: /v1/me/purchase/financed?amount=120000&desc=Compra%20Demo%20Pack%20X
 app.get("/v1/me/purchase/financed", async (req, res) => {
@@ -122,7 +148,7 @@ app.get("/v1/me/purchase/financed", async (req, res) => {
         official,
         reserved,
         available,
-        requested: amount
+        requested: amount,
       });
     }
 
@@ -134,13 +160,13 @@ app.get("/v1/me/purchase/financed", async (req, res) => {
       type: "BUY_FINANCED",
       status: "PENDIENTE",
       conexionId: null,
-      idempotencyKey: req.header("Idempotency-Key") ?? null
+      idempotencyKey: req.header("Idempotency-Key") ?? null,
     });
 
     await addOrderEvent(orderId, "CREATED", {
       type: "BUY_FINANCED",
       amount,
-      description
+      description,
     });
 
     // 5) Crear Reserva en Neon por el total
@@ -150,12 +176,12 @@ app.get("/v1/me/purchase/financed", async (req, res) => {
       clientId: Number(DEMO_CLIENT_ID),
       orderId,
       amount,
-      status: "ACTIVE"
+      status: "ACTIVE",
     });
 
     await addOrderEvent(orderId, "RESERVED_CREDIT", {
       reservationId,
-      amount
+      amount,
     });
 
     // 6) Calcular cuota (3 meses)
@@ -165,30 +191,36 @@ app.get("/v1/me/purchase/financed", async (req, res) => {
     const adicionalRes = await createAriaAdditionalStrict({
       clientId: DEMO_CLIENT_ID,
       installmentValue: installment,
-      description
+      description,
     });
 
     if (adicionalRes.ok) {
       await addOrderEvent(orderId, "ADICIONAL_CREATED", {
         installment,
         months: 3,
-        status: adicionalRes.status
+        status: adicionalRes.status,
       });
 
-      // Nota: todavía no estamos “consumiendo” la reserva (CONSUMED),
-      // lo hacemos en el paso siguiente cuando implementemos update de reservas.
+      // 8) Consumir reserva (ya se creó el adicional OK)
+      const consumed = await setReservationStatus(reservationId, "CONSUMED");
+
+      await addOrderEvent(orderId, "RESERVATION_CONSUMED", {
+        reservationId,
+        status: consumed?.status ?? "CONSUMED",
+      });
+
       return res.status(201).json({
         ok: true,
         order,
-        reservation,
-        adicional: { ok: true, status: adicionalRes.status }
+        reservation: consumed ?? reservation,
+        adicional: { ok: true, status: adicionalRes.status },
       });
     }
 
     // Si falla el adicional, dejamos reserva activa y orden en proceso (eventos)
     await addOrderEvent(orderId, "ADICIONAL_FAILED", {
       status: adicionalRes.status,
-      body: adicionalRes.bodyText.slice(0, 500)
+      body: adicionalRes.bodyText.slice(0, 500),
     });
 
     return res.status(502).json({
@@ -199,19 +231,18 @@ app.get("/v1/me/purchase/financed", async (req, res) => {
       adicional: {
         ok: false,
         status: adicionalRes.status,
-        body: adicionalRes.bodyText.slice(0, 500)
-      }
+        body: adicionalRes.bodyText.slice(0, 500),
+      },
     });
   } catch (err: any) {
     console.error(err);
     res.status(500).json({
       ok: false,
       error: "PURCHASE_FLOW_ERROR",
-      detail: String(err?.message ?? err)
+      detail: String(err?.message ?? err),
     });
   }
 });
-
 
 // TEMP: crear una orden demo desde el navegador (luego lo borramos)
 app.get("/v1/me/orders/demo-create", async (req, res) => {
@@ -232,7 +263,9 @@ app.get("/v1/me/orders/demo-create", async (req, res) => {
     res.status(201).json({ ok: true, order });
   } catch (err: any) {
     console.error(err);
-    res.status(500).json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
+    res
+      .status(500)
+      .json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
   }
 });
 
@@ -243,7 +276,9 @@ app.get("/v1/me/orders", async (_req, res) => {
     res.json({ clientId: DEMO_CLIENT_ID, orders });
   } catch (err: any) {
     console.error(err);
-    res.status(500).json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
+    res
+      .status(500)
+      .json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
   }
 });
 
@@ -265,7 +300,9 @@ app.post("/v1/me/orders/demo", async (req, res) => {
     res.status(201).json({ ok: true, order });
   } catch (err: any) {
     console.error(err);
-    res.status(500).json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
+    res
+      .status(500)
+      .json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
   }
 });
 
