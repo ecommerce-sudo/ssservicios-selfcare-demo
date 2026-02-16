@@ -59,3 +59,16 @@ export async function setReservationStatus(id: string, status: ReservationStatus
 
   return rows[0] ?? null;
 }
+export async function listReservationsByClient(clientId: number): Promise<ReservationRow[]> {
+  const { rows } = await pool.query<ReservationRow>(
+    `
+    select id, client_id, order_id, amount, status, created_at
+    from credit_reservations
+    where client_id = $1
+    order by created_at desc
+    limit 50
+    `,
+    [clientId]
+  );
+  return rows;
+}
