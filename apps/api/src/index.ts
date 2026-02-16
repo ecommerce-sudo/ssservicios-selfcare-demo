@@ -11,6 +11,7 @@ import {
   listPendingBuyFinancedByClient,
   listOrderEvents,
 } from "./orders.js";
+
 import { anatodGetClienteById } from "./anatod.js";
 import {
   sumActiveReservations,
@@ -318,37 +319,45 @@ app.get("/v1/me/orders", async (_req, res) => {
 // Uso: /v1/me/orders/reconcile
 app.get("/v1/me/orders/reconcile", async (_req, res) => {
   try {
+    // hoy usamos la función existente (solo PENDIENTE)
     const pending = await listPendingBuyFinancedByClient(Number(DEMO_CLIENT_ID));
 
     let updatedToApplied = 0;
     let updatedToInProcess = 0;
 
-    const touched: Array<{ orderId: string; from: string; to: string }> = [];
-    const skipped: string[] = [];
+    const touched: Array<{ orderId: string; from: string; to: string; reason: string }> = [];
+    const skipped: Array<{ orderId: string; status: string; foundEvents: string[] }> = [];
 
     for (const o of pending) {
       const events = await listOrderEvents(o.id);
       const types = new Set(events.map((e) => e.event_type));
 
-      if (types.has("ADICIONAL_CREATED")) {
+      // Reglas “más sólidas”: pedimos adicional + consumo de reserva para APLICADO
+      const hasAdicionalCreated = types.has("ADICIONAL_CREATED");
+      const hasReservationConsumed = types.has("RESERVATION_CONSUMED");
+      const hasAdicionalFailed = types.has("ADICIONAL_FAILED");
+
+      if (hasAdicionalCreated && hasReservationConsumed) {
         await setOrderStatus(o.id, "APLICADO");
-        await addOrderEvent(o.id, "RECONCILED", { from: o.status, to: "APLICADO" });
+        await addOrderEvent(o.id, "RECONCILED", { from: o.status, to: "APLICADO", rule: "ADICIONAL_CREATED+RESERVATION_CONSUMED" });
         await addOrderEvent(o.id, "STATUS_UPDATED", { status: "APLICADO", via: "reconcile" });
+
         updatedToApplied++;
-        touched.push({ orderId: o.id, from: o.status, to: "APLICADO" });
+        touched.push({ orderId: o.id, from: o.status, to: "APLICADO", reason: "adicional+reserva_consumida" });
         continue;
       }
 
-      if (types.has("ADICIONAL_FAILED")) {
+      if (hasAdicionalFailed) {
         await setOrderStatus(o.id, "EN_PROCESO");
-        await addOrderEvent(o.id, "RECONCILED", { from: o.status, to: "EN_PROCESO" });
+        await addOrderEvent(o.id, "RECONCILED", { from: o.status, to: "EN_PROCESO", rule: "ADICIONAL_FAILED" });
         await addOrderEvent(o.id, "STATUS_UPDATED", { status: "EN_PROCESO", via: "reconcile" });
+
         updatedToInProcess++;
-        touched.push({ orderId: o.id, from: o.status, to: "EN_PROCESO" });
+        touched.push({ orderId: o.id, from: o.status, to: "EN_PROCESO", reason: "adicional_failed" });
         continue;
       }
 
-      skipped.push(o.id);
+      skipped.push({ orderId: o.id, status: o.status, foundEvents: Array.from(types) });
     }
 
     res.json({
@@ -359,6 +368,7 @@ app.get("/v1/me/orders/reconcile", async (_req, res) => {
       updatedToInProcess,
       skipped,
       touched,
+      note: "Esta reconcile hoy solo mira BUY_FINANCED en PENDIENTE (por función actual). Si querés, la extendemos a EN_PROCESO también.",
     });
   } catch (err: any) {
     console.error(err);
