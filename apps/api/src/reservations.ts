@@ -46,3 +46,16 @@ export async function createReservation(input: {
 
   return rows[0]!;
 }
+export async function setReservationStatus(id: string, status: ReservationStatus) {
+  const { rows } = await pool.query<ReservationRow>(
+    `
+    update credit_reservations
+    set status = $2
+    where id = $1
+    returning id, client_id, order_id, amount, status, created_at
+    `,
+    [id, status]
+  );
+
+  return rows[0] ?? null;
+}
