@@ -8,7 +8,8 @@ import {
   createOrder,
   addOrderEvent,
   setOrderStatus,
-  listPendingBuyFinancedByClient,
+  // 👇 NUEVO: este lo agregás en orders.ts (Paso 1)
+  listBuyFinancedByClientInStatuses,
   listOrderEvents,
 } from "./orders.js";
 
@@ -315,60 +316,79 @@ app.get("/v1/me/orders", async (_req, res) => {
   }
 });
 
-// TEMP: reconciliar órdenes BUY_FINANCED en PENDIENTE según eventos (deja el demo prolijo)
+// TEMP: reconciliar órdenes BUY_FINANCED en PENDIENTE/EN_PROCESO/FALLIDO según eventos (demo prolijo)
 // Uso: /v1/me/orders/reconcile
 app.get("/v1/me/orders/reconcile", async (_req, res) => {
   try {
-    // hoy usamos la función existente (solo PENDIENTE)
-    const pending = await listPendingBuyFinancedByClient(Number(DEMO_CLIENT_ID));
+    const candidates = await listBuyFinancedByClientInStatuses(Number(DEMO_CLIENT_ID), [
+      "PENDIENTE",
+      "EN_PROCESO",
+      "FALLIDO",
+    ]);
 
     let updatedToApplied = 0;
     let updatedToInProcess = 0;
+    let updatedToFailed = 0;
 
     const touched: Array<{ orderId: string; from: string; to: string; reason: string }> = [];
     const skipped: Array<{ orderId: string; status: string; foundEvents: string[] }> = [];
 
-    for (const o of pending) {
+    for (const o of candidates) {
       const events = await listOrderEvents(o.id);
       const types = new Set(events.map((e) => e.event_type));
 
-      // Reglas “más sólidas”: pedimos adicional + consumo de reserva para APLICADO
       const hasAdicionalCreated = types.has("ADICIONAL_CREATED");
       const hasReservationConsumed = types.has("RESERVATION_CONSUMED");
       const hasAdicionalFailed = types.has("ADICIONAL_FAILED");
+      const hasReservedCredit = types.has("RESERVED_CREDIT");
 
+      let desired: "APLICADO" | "EN_PROCESO" | "FALLIDO" | null = null;
+      let reason = "";
+
+      // Regla fuerte: aplicado solo si adicional creado + reserva consumida
       if (hasAdicionalCreated && hasReservationConsumed) {
-        await setOrderStatus(o.id, "APLICADO");
-        await addOrderEvent(o.id, "RECONCILED", { from: o.status, to: "APLICADO", rule: "ADICIONAL_CREATED+RESERVATION_CONSUMED" });
-        await addOrderEvent(o.id, "STATUS_UPDATED", { status: "APLICADO", via: "reconcile" });
-
-        updatedToApplied++;
-        touched.push({ orderId: o.id, from: o.status, to: "APLICADO", reason: "adicional+reserva_consumida" });
+        desired = "APLICADO";
+        reason = "ADICIONAL_CREATED+RESERVATION_CONSUMED";
+      } else if (hasAdicionalFailed) {
+        // cuando falla el adicional, lo llevamos a FALLIDO (más claro que EN_PROCESO)
+        desired = "FALLIDO";
+        reason = "ADICIONAL_FAILED";
+      } else if (hasReservedCredit) {
+        // reservado pero sin resultado final aún => en proceso
+        desired = "EN_PROCESO";
+        reason = "RESERVED_CREDIT (no final events)";
+      } else {
+        skipped.push({ orderId: o.id, status: o.status, foundEvents: Array.from(types) });
         continue;
       }
 
-      if (hasAdicionalFailed) {
-        await setOrderStatus(o.id, "EN_PROCESO");
-        await addOrderEvent(o.id, "RECONCILED", { from: o.status, to: "EN_PROCESO", rule: "ADICIONAL_FAILED" });
-        await addOrderEvent(o.id, "STATUS_UPDATED", { status: "EN_PROCESO", via: "reconcile" });
-
-        updatedToInProcess++;
-        touched.push({ orderId: o.id, from: o.status, to: "EN_PROCESO", reason: "adicional_failed" });
+      // Idempotente: si ya está en desired, no tocamos
+      if (o.status === desired) {
+        skipped.push({ orderId: o.id, status: o.status, foundEvents: Array.from(types) });
         continue;
       }
 
-      skipped.push({ orderId: o.id, status: o.status, foundEvents: Array.from(types) });
+      await setOrderStatus(o.id, desired);
+      await addOrderEvent(o.id, "RECONCILED", { from: o.status, to: desired, rule: reason });
+      await addOrderEvent(o.id, "STATUS_UPDATED", { status: desired, via: "reconcile" });
+
+      if (desired === "APLICADO") updatedToApplied++;
+      if (desired === "EN_PROCESO") updatedToInProcess++;
+      if (desired === "FALLIDO") updatedToFailed++;
+
+      touched.push({ orderId: o.id, from: o.status, to: desired, reason });
     }
 
     res.json({
       ok: true,
       clientId: Number(DEMO_CLIENT_ID),
-      scanned: pending.length,
+      scanned: candidates.length,
       updatedToApplied,
       updatedToInProcess,
+      updatedToFailed,
       skipped,
       touched,
-      note: "Esta reconcile hoy solo mira BUY_FINANCED en PENDIENTE (por función actual). Si querés, la extendemos a EN_PROCESO también.",
+      note: "Reconcile BUY_FINANCED: (ADICIONAL_CREATED+RESERVATION_CONSUMED)=>APLICADO, ADICIONAL_FAILED=>FALLIDO, RESERVED_CREDIT=>EN_PROCESO. Idempotente.",
     });
   } catch (err: any) {
     console.error(err);
