@@ -75,3 +75,18 @@ export async function addOrderEvent(orderId: string, eventType: string, payload:
     [orderId, eventType, payload]
   );
 }
+export async function setOrderStatus(orderId: string, status: OrderStatus): Promise<OrderRow | null> {
+  const { rows } = await pool.query<OrderRow>(
+    `
+    update orders
+    set status = $2, updated_at = now()
+    where id = $1
+    returning
+      id, client_id, type, status, conexion_id, previous_plan_id, target_plan_id,
+      ticket_id, idempotency_key, created_at, updated_at
+    `,
+    [orderId, status]
+  );
+
+  return rows[0] ?? null;
+}
