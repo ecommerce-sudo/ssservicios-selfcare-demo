@@ -8,6 +8,8 @@ import {
   createOrder,
   addOrderEvent,
   setOrderStatus,
+  listPendingBuyFinancedByClient,
+  listOrderEvents,
 } from "./orders.js";
 import { anatodGetClienteById } from "./anatod.js";
 import {
@@ -303,12 +305,68 @@ app.get("/v1/me/orders/demo-create", async (req, res) => {
 app.get("/v1/me/orders", async (_req, res) => {
   try {
     const orders = await listOrdersByClient(DEMO_CLIENT_ID);
-    res.json({ clientId: DEMO_CLIENT_ID, orders });
+    res.json({ clientId: Number(DEMO_CLIENT_ID), orders });
   } catch (err: any) {
     console.error(err);
     res
       .status(500)
       .json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
+  }
+});
+
+// TEMP: reconciliar órdenes BUY_FINANCED en PENDIENTE según eventos (deja el demo prolijo)
+// Uso: /v1/me/orders/reconcile
+app.get("/v1/me/orders/reconcile", async (_req, res) => {
+  try {
+    const pending = await listPendingBuyFinancedByClient(Number(DEMO_CLIENT_ID));
+
+    let updatedToApplied = 0;
+    let updatedToInProcess = 0;
+
+    const touched: Array<{ orderId: string; from: string; to: string }> = [];
+    const skipped: string[] = [];
+
+    for (const o of pending) {
+      const events = await listOrderEvents(o.id);
+      const types = new Set(events.map((e) => e.event_type));
+
+      if (types.has("ADICIONAL_CREATED")) {
+        await setOrderStatus(o.id, "APLICADO");
+        await addOrderEvent(o.id, "RECONCILED", { from: o.status, to: "APLICADO" });
+        await addOrderEvent(o.id, "STATUS_UPDATED", { status: "APLICADO", via: "reconcile" });
+        updatedToApplied++;
+        touched.push({ orderId: o.id, from: o.status, to: "APLICADO" });
+        continue;
+      }
+
+      if (types.has("ADICIONAL_FAILED")) {
+        await setOrderStatus(o.id, "EN_PROCESO");
+        await addOrderEvent(o.id, "RECONCILED", { from: o.status, to: "EN_PROCESO" });
+        await addOrderEvent(o.id, "STATUS_UPDATED", { status: "EN_PROCESO", via: "reconcile" });
+        updatedToInProcess++;
+        touched.push({ orderId: o.id, from: o.status, to: "EN_PROCESO" });
+        continue;
+      }
+
+      skipped.push(o.id);
+    }
+
+    res.json({
+      ok: true,
+      clientId: Number(DEMO_CLIENT_ID),
+      scanned: pending.length,
+      updatedToApplied,
+      updatedToInProcess,
+      skipped,
+      touched,
+    });
+  } catch (err: any) {
+    console.error(err);
+    res.status(500).json({
+      ok: false,
+      error: "RECONCILE_ERROR",
+      detail: String(err?.message ?? err),
+    });
   }
 });
 
