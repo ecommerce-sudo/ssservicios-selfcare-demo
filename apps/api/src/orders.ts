@@ -90,3 +90,40 @@ export async function setOrderStatus(orderId: string, status: OrderStatus): Prom
 
   return rows[0] ?? null;
 }
+export type OrderEventRow = {
+  order_id: string;
+  event_type: string;
+  payload: any;
+  created_at: string;
+};
+
+export async function listPendingBuyFinancedByClient(clientId: number): Promise<OrderRow[]> {
+  const { rows } = await pool.query<OrderRow>(
+    `
+    select
+      id, client_id, type, status, conexion_id, previous_plan_id, target_plan_id,
+      ticket_id, idempotency_key, created_at, updated_at
+    from orders
+    where client_id = $1
+      and type = 'BUY_FINANCED'
+      and status = 'PENDIENTE'
+    order by created_at desc
+    limit 50
+    `,
+    [clientId]
+  );
+  return rows;
+}
+
+export async function listOrderEvents(orderId: string): Promise<OrderEventRow[]> {
+  const { rows } = await pool.query<OrderEventRow>(
+    `
+    select order_id, event_type, payload, created_at
+    from order_events
+    where order_id = $1
+    order by created_at asc
+    `,
+    [orderId]
+  );
+  return rows;
+}
