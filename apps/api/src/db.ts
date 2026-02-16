@@ -8,7 +8,7 @@ if (!connectionString) {
 
 export const pool = new Pool({
   connectionString,
-  // Neon requiere SSL; con sslmode=require en la URL alcanza.
-  // Esto ayuda a evitar problemas con algunos drivers.
-  ssl: { rejectUnauthorized: false },
+  // Neon usa SSL; con sslmode=require en la URL alcanza.
+  // Esto evita problemas de SSL en algunos entornos.
+  ssl: { rejectUnauthorized: false }
 });
