@@ -9,6 +9,7 @@ import {
   sumActiveReservations,
   createReservation,
   setReservationStatus,
+  listReservationsByClient,
 } from "./reservations.js";
 import { createAriaAdditionalStrict } from "./adicional.js";
 
@@ -116,6 +117,21 @@ app.get("/v1/me/reservations/demo-release", async (req, res) => {
     res
       .status(500)
       .json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
+  }
+});
+
+// Listar reservas del cliente (últimas 50)
+app.get("/v1/me/reservations", async (_req, res) => {
+  try {
+    const rows = await listReservationsByClient(Number(DEMO_CLIENT_ID));
+    res.json({ clientId: Number(DEMO_CLIENT_ID), reservations: rows });
+  } catch (err: any) {
+    console.error(err);
+    res.status(500).json({
+      ok: false,
+      error: "DB_ERROR",
+      detail: String(err?.message ?? err),
+    });
   }
 });
 
