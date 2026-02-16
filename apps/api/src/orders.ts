@@ -1,21 +1,6 @@
 import { pool } from "./db.js";
 
-/**
- * Estados de orden (alineados a tu ERP + demo):
- * - PENDIENTE: creada, esperando procesamiento
- * - EN_PROCESO: falló integración / requiere intervención o reintento
- * - DIFERENCIA_PEDIDA: cupo parcial, requiere pago de diferencia
- * - APLICADO: adicional creado OK y reserva consumida
- * - CANCELADO: no apto / cancelada
- * - FALLIDO: error final (no reintentar) o inconsistencia grave
- */
-export type OrderStatus =
-  | "PENDIENTE"
-  | "EN_PROCESO"
-  | "DIFERENCIA_PEDIDA"
-  | "APLICADO"
-  | "CANCELADO"
-  | "FALLIDO";
+export type OrderStatus = "PENDIENTE" | "APLICADO" | "EN_PROCESO" | "FALLIDO";
 
 export type OrderRow = {
   id: string;
@@ -81,11 +66,7 @@ export async function createOrder(input: {
   return rows[0]!;
 }
 
-export async function addOrderEvent(
-  orderId: string,
-  eventType: string,
-  payload: unknown = null
-) {
+export async function addOrderEvent(orderId: string, eventType: string, payload: unknown = null) {
   await pool.query(
     `
     insert into order_events (order_id, event_type, payload)
@@ -95,10 +76,7 @@ export async function addOrderEvent(
   );
 }
 
-export async function setOrderStatus(
-  orderId: string,
-  status: OrderStatus
-): Promise<OrderRow | null> {
+export async function setOrderStatus(orderId: string, status: OrderStatus): Promise<OrderRow | null> {
   const { rows } = await pool.query<OrderRow>(
     `
     update orders
@@ -121,13 +99,7 @@ export type OrderEventRow = {
   created_at: string;
 };
 
-/**
- * Para reconciliación/operación: nos interesan órdenes financiadas que todavía no están "cerradas".
- * - PENDIENTE: recién creada
- * - EN_PROCESO: requiere reintento/intervención
- * - DIFERENCIA_PEDIDA: requiere cobro adicional
- */
-export async function listOpenBuyFinancedByClient(clientId: number): Promise<OrderRow[]> {
+export async function listPendingBuyFinancedByClient(clientId: number): Promise<OrderRow[]> {
   const { rows } = await pool.query<OrderRow>(
     `
     select
@@ -136,7 +108,7 @@ export async function listOpenBuyFinancedByClient(clientId: number): Promise<Ord
     from orders
     where client_id = $1
       and type = 'BUY_FINANCED'
-      and status in ('PENDIENTE','EN_PROCESO','DIFERENCIA_PEDIDA')
+      and status = 'PENDIENTE'
     order by created_at desc
     limit 50
     `,
@@ -146,26 +118,9 @@ export async function listOpenBuyFinancedByClient(clientId: number): Promise<Ord
 }
 
 /**
- * Compatibilidad hacia atrás: si en algún punto del index todavía llamás a
- * listPendingBuyFinancedByClient, lo dejamos como alias.
+ * NUEVO: trae BUY_FINANCED por múltiples estados (PENDIENTE, EN_PROCESO, etc.)
  */
-export async function listPendingBuyFinancedByClient(clientId: number): Promise<OrderRow[]> {
-  return listOpenBuyFinancedByClient(clientId);
-}
-
-export async function listOrderEvents(orderId: string): Promise<OrderEventRow[]> {
-  const { rows } = await pool.query<OrderEventRow>(
-    `
-    select order_id, event_type, payload, created_at
-    from order_events
-    where order_id = $1
-    order by created_at asc
-    `,
-    [orderId]
-  );
-  return rows;
-}
-export async function listBuyFinancedByClientInStatuses(
+export async function listBuyFinancedByClientByStatuses(
   clientId: number,
   statuses: OrderStatus[]
 ): Promise<OrderRow[]> {
@@ -183,6 +138,18 @@ export async function listBuyFinancedByClientInStatuses(
     `,
     [clientId, statuses]
   );
+  return rows;
+}
 
+export async function listOrderEvents(orderId: string): Promise<OrderEventRow[]> {
+  const { rows } = await pool.query<OrderEventRow>(
+    `
+    select order_id, event_type, payload, created_at
+    from order_events
+    where order_id = $1
+    order by created_at asc
+    `,
+    [orderId]
+  );
   return rows;
 }
