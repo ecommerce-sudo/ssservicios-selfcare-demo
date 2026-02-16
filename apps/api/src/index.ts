@@ -3,7 +3,12 @@ import cors from "cors";
 import helmet from "helmet";
 import dotenv from "dotenv";
 
-import { listOrdersByClient, createOrder, addOrderEvent } from "./orders.js";
+import {
+  listOrdersByClient,
+  createOrder,
+  addOrderEvent,
+  setOrderStatus,
+} from "./orders.js";
 import { anatodGetClienteById } from "./anatod.js";
 import {
   sumActiveReservations,
@@ -225,25 +230,34 @@ app.get("/v1/me/purchase/financed", async (req, res) => {
         status: consumed?.status ?? "CONSUMED",
       });
 
+      // 9) Estado final de orden
+      await setOrderStatus(orderId, "APLICADO");
+      await addOrderEvent(orderId, "STATUS_UPDATED", { status: "APLICADO" });
+
       return res.status(201).json({
         ok: true,
         order,
         reservation: consumed ?? reservation,
         adicional: { ok: true, status: adicionalRes.status },
+        status: "APLICADO",
       });
     }
 
-    // Si falla el adicional, dejamos reserva activa y orden en proceso (eventos)
+    // Si falla el adicional: dejamos reserva ACTIVE y orden EN_PROCESO
     await addOrderEvent(orderId, "ADICIONAL_FAILED", {
       status: adicionalRes.status,
       body: adicionalRes.bodyText.slice(0, 500),
     });
+
+    await setOrderStatus(orderId, "EN_PROCESO");
+    await addOrderEvent(orderId, "STATUS_UPDATED", { status: "EN_PROCESO" });
 
     return res.status(502).json({
       ok: false,
       error: "ADICIONAL_FAILED",
       order,
       reservation,
+      status: "EN_PROCESO",
       adicional: {
         ok: false,
         status: adicionalRes.status,
