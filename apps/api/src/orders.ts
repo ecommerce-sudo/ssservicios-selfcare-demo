@@ -165,3 +165,24 @@ export async function listOrderEvents(orderId: string): Promise<OrderEventRow[]>
   );
   return rows;
 }
+export async function listBuyFinancedByClientInStatuses(
+  clientId: number,
+  statuses: OrderStatus[]
+): Promise<OrderRow[]> {
+  const { rows } = await pool.query<OrderRow>(
+    `
+    select
+      id, client_id, type, status, conexion_id, previous_plan_id, target_plan_id,
+      ticket_id, idempotency_key, created_at, updated_at
+    from orders
+    where client_id = $1
+      and type = 'BUY_FINANCED'
+      and status = any($2::text[])
+    order by created_at desc
+    limit 50
+    `,
+    [clientId, statuses]
+  );
+
+  return rows;
+}
