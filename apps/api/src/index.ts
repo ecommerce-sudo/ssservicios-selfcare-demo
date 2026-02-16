@@ -44,6 +44,28 @@ app.get("/v1/me", (_req, res) => {
     note: "purchaseAvailable mock; luego lo traemos desde Aria",
   });
 });
+// TEMP: crear una orden demo desde el navegador (luego lo borramos)
+app.get("/v1/me/orders/demo-create", async (req, res) => {
+  try {
+    const orderId = `ord_${Date.now()}`;
+
+    const order = await createOrder({
+      id: orderId,
+      clientId: DEMO_CLIENT_ID,
+      type: "UPGRADE_INTERNET",
+      status: "PENDIENTE",
+      conexionId: null,
+      idempotencyKey: req.header("Idempotency-Key") ?? null,
+    });
+
+    await addOrderEvent(orderId, "CREATED", { via: "demo_create_get" });
+
+    res.status(201).json({ ok: true, order });
+  } catch (err: any) {
+    console.error(err);
+    res.status(500).json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
+  }
+});
 
 // Listado de órdenes del cliente (lee Neon)
 app.get("/v1/me/orders", async (_req, res) => {
