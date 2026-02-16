@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import dotenv from "dotenv";
+import { createAriaAdditionalStrict } from "./adicional.js";
 
 import { listOrdersByClient, createOrder, addOrderEvent } from "./orders.js";
 import { anatodGetClienteById } from "./anatod.js";
@@ -92,6 +93,125 @@ app.get("/v1/me/reservations/demo-add", async (req, res) => {
     res.status(500).json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
   }
 });
+// COMPRA FINANCIADA (DEMO REAL): crea order + reserva + adicional (3 cuotas)
+// Uso: /v1/me/purchase/financed?amount=120000&desc=Compra%20Demo%20Pack%20X
+app.get("/v1/me/purchase/financed", async (req, res) => {
+  try {
+    const amountRaw = String(req.query.amount ?? "").trim();
+    const descRaw = String(req.query.desc ?? "").trim();
+
+    const amount = Number(amountRaw);
+    const description = descRaw || `Compra App Demo - ${new Date().toISOString()}`;
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return res.status(400).json({ ok: false, error: "INVALID_AMOUNT" });
+    }
+
+    // 1) Cupo oficial (anatod) + 2) Reservas activas (Neon)
+    const c = await anatodGetClienteById(DEMO_CLIENT_ID);
+    const reserved = await sumActiveReservations(Number(DEMO_CLIENT_ID));
+
+    const official = c.financiable;
+    const available = Math.max(official - reserved, 0);
+
+    // 3) Validación de cupo
+    if (amount > available) {
+      return res.status(409).json({
+        ok: false,
+        error: "INSUFFICIENT_CREDIT",
+        official,
+        reserved,
+        available,
+        requested: amount
+      });
+    }
+
+    // 4) Crear Order en Neon
+    const orderId = `ord_${Date.now()}`;
+    const order = await createOrder({
+      id: orderId,
+      clientId: DEMO_CLIENT_ID,
+      type: "BUY_FINANCED",
+      status: "PENDIENTE",
+      conexionId: null,
+      idempotencyKey: req.header("Idempotency-Key") ?? null
+    });
+
+    await addOrderEvent(orderId, "CREATED", {
+      type: "BUY_FINANCED",
+      amount,
+      description
+    });
+
+    // 5) Crear Reserva en Neon por el total
+    const reservationId = `res_${Date.now()}`;
+    const reservation = await createReservation({
+      id: reservationId,
+      clientId: Number(DEMO_CLIENT_ID),
+      orderId,
+      amount,
+      status: "ACTIVE"
+    });
+
+    await addOrderEvent(orderId, "RESERVED_CREDIT", {
+      reservationId,
+      amount
+    });
+
+    // 6) Calcular cuota (3 meses)
+    const installment = Math.round((amount / 3) * 100) / 100;
+
+    // 7) Crear adicional real en anatod
+    const adicionalRes = await createAriaAdditionalStrict({
+      clientId: DEMO_CLIENT_ID,
+      installmentValue: installment,
+      description
+    });
+
+    if (adicionalRes.ok) {
+      await addOrderEvent(orderId, "ADICIONAL_CREATED", {
+        installment,
+        months: 3,
+        status: adicionalRes.status
+      });
+
+      // Nota: todavía no estamos “consumiendo” la reserva (CONSUMED),
+      // lo hacemos en el paso siguiente cuando implementemos update de reservas.
+      return res.status(201).json({
+        ok: true,
+        order,
+        reservation,
+        adicional: { ok: true, status: adicionalRes.status }
+      });
+    }
+
+    // Si falla el adicional, dejamos reserva activa y orden en proceso (eventos)
+    await addOrderEvent(orderId, "ADICIONAL_FAILED", {
+      status: adicionalRes.status,
+      body: adicionalRes.bodyText.slice(0, 500)
+    });
+
+    return res.status(502).json({
+      ok: false,
+      error: "ADICIONAL_FAILED",
+      order,
+      reservation,
+      adicional: {
+        ok: false,
+        status: adicionalRes.status,
+        body: adicionalRes.bodyText.slice(0, 500)
+      }
+    });
+  } catch (err: any) {
+    console.error(err);
+    res.status(500).json({
+      ok: false,
+      error: "PURCHASE_FLOW_ERROR",
+      detail: String(err?.message ?? err)
+    });
+  }
+});
+
 
 // TEMP: crear una orden demo desde el navegador (luego lo borramos)
 app.get("/v1/me/orders/demo-create", async (req, res) => {
