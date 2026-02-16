@@ -235,16 +235,17 @@ app.get("/v1/me/purchase/financed", async (req, res) => {
       });
 
       // 9) Estado final de orden
-      await setOrderStatus(orderId, "APLICADO");
-      await addOrderEvent(orderId, "STATUS_UPDATED", { status: "APLICADO" });
+     const updatedOrder = await setOrderStatus(orderId, "APLICADO");
+await addOrderEvent(orderId, "STATUS_UPDATED", { status: "APLICADO" });
 
-      return res.status(201).json({
-        ok: true,
-        order,
-        reservation: consumed ?? reservation,
-        adicional: { ok: true, status: adicionalRes.status },
-        status: "APLICADO",
-      });
+return res.status(201).json({
+  ok: true,
+  order: updatedOrder ?? order, // si por algo no vuelve row, no rompemos
+  reservation: consumed ?? reservation,
+  adicional: { ok: true, status: adicionalRes.status },
+  status: "APLICADO",
+});
+
     }
 
     // Si falla el adicional: dejamos reserva ACTIVE y orden EN_PROCESO
