@@ -2,14 +2,13 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import dotenv from "dotenv";
+
 import { listOrdersByClient, createOrder, addOrderEvent } from "./orders.js";
 import { anatodGetClienteById } from "./anatod.js";
 import { sumActiveReservations, createReservation } from "./reservations.js";
 
-
-
-
 dotenv.config();
+
 // Demo auth: por ahora fijamos clientId=66489.
 // Más adelante lo cambiamos por login real / token.
 const DEMO_CLIENT_ID = 66489;
@@ -37,13 +36,14 @@ app.get("/health", (_req, res) => {
     ts: new Date().toISOString(),
   });
 });
+
+// Perfil + cupo (anatod) - descuenta reservas activas (Neon)
 app.get("/v1/me", async (_req, res) => {
   try {
     const c = await anatodGetClienteById(DEMO_CLIENT_ID);
 
-    // Reservas pendientes en Neon: por ahora 0 (etapa siguiente)
-   const reserved = await sumActiveReservations(Number(DEMO_CLIENT_ID));
-
+    // Reservas pendientes (Neon)
+    const reserved = await sumActiveReservations(Number(DEMO_CLIENT_ID));
 
     const official = c.financiable; // "clienteScoringFinanciable" parseado a number
     const available = Math.max(official - reserved, 0);
@@ -55,15 +55,41 @@ app.get("/v1/me", async (_req, res) => {
       purchaseAvailableReserved: reserved,
       purchaseAvailable: available,
       currency: "ARS",
-      source: "anatod:/cliente/{id}"
+      source: "anatod:/cliente/{id}",
     });
   } catch (err: any) {
     console.error(err);
     res.status(502).json({
       ok: false,
       error: "ANATOD_ERROR",
-      detail: String(err?.message ?? err)
+      detail: String(err?.message ?? err),
     });
+  }
+});
+
+// TEMP: agregar una reserva demo desde navegador: /v1/me/reservations/demo-add?amount=120000
+app.get("/v1/me/reservations/demo-add", async (req, res) => {
+  try {
+    const amountRaw = String(req.query.amount ?? "").trim();
+    const amount = Number(amountRaw);
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return res.status(400).json({ ok: false, error: "INVALID_AMOUNT" });
+    }
+
+    const id = `res_${Date.now()}`;
+
+    const row = await createReservation({
+      id,
+      clientId: Number(DEMO_CLIENT_ID),
+      amount,
+      status: "ACTIVE",
+    });
+
+    res.status(201).json({ ok: true, reservation: row });
+  } catch (err: any) {
+    console.error(err);
+    res.status(500).json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
   }
 });
 
