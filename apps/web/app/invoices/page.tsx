@@ -56,6 +56,44 @@ function pickDueOrIssued(inv: InvoiceDTO) {
   return inv.dueDate || inv.issuedAt;
 }
 
+function parseISODateOnly(s: string) {
+  // "YYYY-MM-DD" -> Date en medianoche local (para cálculo de días)
+  const [y, m, d] = s.split("-").map((x) => Number(x));
+  if (!y || !m || !d) return null;
+  return new Date(y, m - 1, d, 0, 0, 0, 0);
+}
+
+function startOfToday() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+}
+
+function dueBadge(inv: InvoiceDTO): { label: string; tone: "ok" | "warn" | "bad" | "neutral" } | null {
+  // No mostramos vencimiento si está anulada (evita ruido)
+  if (inv.status === "VOIDED") return null;
+
+  const base = inv.dueDate || inv.issuedAt;
+  if (!base) return { label: "Sin fecha", tone: "neutral" };
+
+  const due = parseISODateOnly(base);
+  if (!due) return { label: "Fecha inválida", tone: "neutral" };
+
+  const today = startOfToday();
+  const ms = 24 * 60 * 60 * 1000;
+  const diffDays = Math.round((due.getTime() - today.getTime()) / ms);
+
+  if (diffDays < 0) {
+    const days = Math.abs(diffDays);
+    return { label: days === 1 ? "Vencida hace 1 día" : `Vencida hace ${days} días`, tone: "bad" };
+  }
+
+  if (diffDays === 0) return { label: "Vence hoy", tone: "warn" };
+  if (diffDays === 1) return { label: "Vence mañana", tone: "warn" };
+  if (diffDays <= 5) return { label: `Vence en ${diffDays} días`, tone: "warn" };
+
+  return { label: `Vence en ${diffDays} días`, tone: "neutral" };
+}
+
 export default function InvoicesPage() {
   const API_BASE = useMemo(
     () => process.env.NEXT_PUBLIC_API_BASE_URL || DEFAULT_API_BASE,
@@ -123,7 +161,7 @@ export default function InvoicesPage() {
     return at - bt;
   });
 
-  // ✅ PASO 1: destacamos la “próxima factura” (solo activas)
+  // Próxima factura (solo activas)
   const active = sorted.filter((x) => x.status !== "VOIDED");
   const nextInvoice = active.length ? active[0] : null;
 
@@ -235,7 +273,7 @@ export default function InvoicesPage() {
             </div>
           ) : null}
 
-          {/* ✅ PASO 1: Próxima factura */}
+          {/* Próxima factura */}
           <SectionTitle>Próxima factura</SectionTitle>
 
           <div style={{ marginTop: 12 }}>
@@ -257,9 +295,16 @@ export default function InvoicesPage() {
                     <div style={{ fontWeight: 900, fontSize: 14 }}>
                       {nextInvoice.displayNumber || `Factura #${nextInvoice.invoiceId}`}
                     </div>
+
                     <Pill tone={statusTone(nextInvoice.status)}>
                       {statusLabel(nextInvoice.status)}
                     </Pill>
+
+                    {/* ✅ NUEVO: badge vencimiento */}
+                    {(() => {
+                      const b = dueBadge(nextInvoice);
+                      return b ? <Pill tone={b.tone}>{b.label}</Pill> : null;
+                    })()}
                   </div>
 
                   <div style={{ marginTop: 6, fontSize: 12, opacity: 0.8, fontWeight: 800 }}>
@@ -312,7 +357,7 @@ export default function InvoicesPage() {
             )}
           </div>
 
-          {/* Listado original */}
+          {/* Listado */}
           <SectionTitle>Listado</SectionTitle>
 
           <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
@@ -324,6 +369,7 @@ export default function InvoicesPage() {
               sorted.map((inv) => {
                 const isVoided = inv.status === "VOIDED";
                 const pdfUrl = invoicePdfUrl(inv.invoiceId);
+                const b = dueBadge(inv);
 
                 return (
                   <div
@@ -337,6 +383,7 @@ export default function InvoicesPage() {
                       justifyContent: "space-between",
                       gap: 12,
                       alignItems: "flex-start",
+                      opacity: isVoided ? 0.75 : 1,
                     }}
                   >
                     <div style={{ minWidth: 0 }}>
@@ -351,7 +398,11 @@ export default function InvoicesPage() {
                         <div style={{ fontWeight: 900, fontSize: 14 }}>
                           {inv.displayNumber || `Factura #${inv.invoiceId}`}
                         </div>
+
                         <Pill tone={statusTone(inv.status)}>{statusLabel(inv.status)}</Pill>
+
+                        {/* ✅ NUEVO: badge vencimiento */}
+                        {b ? <Pill tone={b.tone}>{b.label}</Pill> : null}
                       </div>
 
                       <div style={{ marginTop: 6, fontSize: 12, opacity: 0.8, fontWeight: 800 }}>
@@ -388,7 +439,6 @@ export default function InvoicesPage() {
                         </div>
                       </div>
 
-                      {/* Ver factura + comprobante */}
                       <div style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
                         {isVoided ? (
                           <Btn disabled title="Factura anulada: no se habilita la vista PDF en demo.">
@@ -426,7 +476,6 @@ export default function InvoicesPage() {
                         {pickCurrency(inv)}
                       </div>
 
-                      {/* CTA pagar: lo dejamos “prolijo” hasta conectar link de cobranzas */}
                       <div style={{ marginTop: 10 }}>
                         <Btn
                           disabled
