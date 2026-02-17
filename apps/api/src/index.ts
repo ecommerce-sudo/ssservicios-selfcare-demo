@@ -175,7 +175,8 @@ app.get("/v1/me/invoices", async (req, res) => {
     const limit = Math.min(Math.max(Number(req.query.limit ?? 10), 1), 50);
 
     const raw = await anatodListFacturasByCliente(anatodClientId);
-    const mapped = raw.map(mapFacturaToDTO);
+    const mapped = (raw.data ?? []).map(mapFacturaToDTO);
+
 
     // Orden: vencimiento asc (null al final)
     mapped.sort((a: any, b: any) => {
@@ -206,7 +207,8 @@ app.get("/v1/me/invoices/next", async (_req, res) => {
     const anatodClientId = Number(me.clienteId);
 
     const raw = await anatodListFacturasByCliente(anatodClientId);
-    const mapped = raw.map(mapFacturaToDTO);
+    const mapped = (raw.data ?? []).map(mapFacturaToDTO);
+
 
     const candidates = mapped
       .filter((x: any) => x.status !== "VOIDED" && !!x.dueDate)
