@@ -363,14 +363,15 @@ export default function Page() {
               <Btn onClick={loadServices} disabled={loadingServices} title="Refresca /v1/me/services">
                 {loadingServices ? "Actualizando..." : "Refresh"}
               </Btn>
-              <Link href="/services" style={{ textDecoration: "none" }}>
-                <Btn>Ver servicios</Btn>
+
+              <Link href="/invoices" style={{ textDecoration: "none" }}>
+                <Btn>Facturas</Btn>
               </Link>
             </div>
           </div>
 
           <div style={{ marginTop: 8, opacity: 0.75 }}>
-            Vista demo: listado de servicios del cliente.
+            Tus servicios activos se actualizan automáticamente desde la API.
           </div>
 
           <div style={servicesGrid}>
