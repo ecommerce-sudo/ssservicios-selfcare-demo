@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { Btn, Card, Pill, SectionTitle } from "../ui";
+import { Btn, Card, Pill } from "../ui";
 
 type ServiceRow = {
   id: string;
@@ -183,8 +183,8 @@ export default function ServicesPage() {
               {loading ? "Actualizando..." : "Refresh"}
             </Btn>
 
-            <Link href="/benefits" style={{ textDecoration: "none" }}>
-              <Btn>Ver beneficios</Btn>
+            <Link href="/" style={{ textDecoration: "none" }}>
+              <Btn>← Volver</Btn>
             </Link>
           </div>
         </div>
@@ -242,13 +242,10 @@ export default function ServicesPage() {
             )}
           </div>
 
+          {/* CTA secundario / cross-nav */}
           <div style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <Link href="/" style={{ textDecoration: "none" }}>
-              <Btn>← Volver al inicio</Btn>
-            </Link>
-
             <Link href="/benefits" style={{ textDecoration: "none" }}>
-              <Btn>Ir a beneficios</Btn>
+              <Btn>Ver beneficios</Btn>
             </Link>
           </div>
         </Card>
