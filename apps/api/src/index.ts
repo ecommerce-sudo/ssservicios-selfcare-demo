@@ -26,7 +26,7 @@ import {
 } from "./reservations.js";
 import { createAriaAdditionalStrict } from "./adicional.js";
 
-// ✅ NUEVO: servicios contratados (demo)
+// ✅ servicios contratados (demo)
 import { listServicesByClient } from "./services.js";
 
 dotenv.config();
@@ -50,7 +50,60 @@ app.use(
   })
 );
 
-// Healthcheck (para Render)
+// ---------- Helpers ----------
+function parseMoneyLike(value: unknown): number {
+  if (value === null || value === undefined) return 0;
+  const s = String(value).trim();
+  if (!s) return 0;
+  const n = Number(s.replace(/"/g, ""));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function safeDate(value: any): string | null {
+  const s = String(value ?? "").trim();
+  if (!s || s === "0000-00-00") return null;
+  return s;
+}
+
+function escapeHtml(input: any): string {
+  return String(input ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+/**
+ * Llamada directa a Anatod: /factura/{facturaId}
+ * (No depende de modificar anatod.ts, se mantiene encapsulado acá)
+ */
+async function anatodGetFacturaById(facturaId: number | string) {
+  const base = process.env.ANATOD_BASE_URL; // ej: https://api.anatod.ar/api
+  const apiKey = process.env.ANATOD_API_KEY;
+
+  if (!base) throw new Error("Missing env ANATOD_BASE_URL");
+  if (!apiKey) throw new Error("Missing env ANATOD_API_KEY");
+
+  const url = `${base}/factura/${facturaId}`;
+
+  const res = await fetch(url, {
+    method: "GET",
+    headers: { accept: "application/json", "x-api-key": apiKey },
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`ANATOD_GET_FACTURA_FAILED status=${res.status} body=${text.slice(0, 300)}`);
+  }
+
+  const json = (await res.json()) as any;
+  // a veces viene {data:[{...}]} o {data:{...}} o directo
+  if (json && typeof json === "object" && "data" in json) return json.data;
+  return json;
+}
+
+// ---------- Healthcheck ----------
 app.get("/health", (_req, res) => {
   res.json({
     ok: true,
@@ -59,7 +112,7 @@ app.get("/health", (_req, res) => {
   });
 });
 
-// Perfil + cupo (anatod) - descuenta reservas activas (Neon)
+// ---------- Perfil + cupo ----------
 app.get("/v1/me", async (_req, res) => {
   try {
     const c = await anatodGetClienteById(DEMO_CLIENT_ID);
@@ -94,7 +147,7 @@ app.get("/v1/me", async (_req, res) => {
   }
 });
 
-// ✅ Servicios contratados (DEMO por ahora)
+// ---------- Servicios ----------
 app.get("/v1/me/services", async (_req, res) => {
   try {
     const services = await listServicesByClient(Number(DEMO_CLIENT_ID));
@@ -113,7 +166,7 @@ app.get("/v1/me/services", async (_req, res) => {
   }
 });
 
-// ✅ NUEVO: Facturas del cliente (wrapper limpio, sin PII)
+// ---------- FACTURAS ----------
 app.get("/v1/me/invoices", async (req, res) => {
   try {
     const me = await anatodGetClienteById(DEMO_CLIENT_ID);
@@ -147,7 +200,6 @@ app.get("/v1/me/invoices", async (req, res) => {
   }
 });
 
-// ✅ NUEVO: Próxima factura (para card Home tipo “vence el …”)
 app.get("/v1/me/invoices/next", async (_req, res) => {
   try {
     const me = await anatodGetClienteById(DEMO_CLIENT_ID);
@@ -156,13 +208,9 @@ app.get("/v1/me/invoices/next", async (_req, res) => {
     const raw = await anatodListFacturasByCliente(anatodClientId);
     const mapped = raw.map(mapFacturaToDTO);
 
-    // candidata: no VOIDED y con dueDate válido
     const candidates = mapped
       .filter((x: any) => x.status !== "VOIDED" && !!x.dueDate)
-      .sort(
-        (a: any, b: any) =>
-          new Date(a.dueDate as string).getTime() - new Date(b.dueDate as string).getTime()
-      );
+      .sort((a: any, b: any) => new Date(a.dueDate as string).getTime() - new Date(b.dueDate as string).getTime());
 
     res.json({
       clientId: Number(DEMO_CLIENT_ID),
@@ -180,7 +228,186 @@ app.get("/v1/me/invoices/next", async (_req, res) => {
   }
 });
 
-// TEMP: agregar una reserva demo desde navegador: /v1/me/reservations/demo-add?amount=120000
+// Factura puntual (DTO) — útil para “detalle”
+app.get("/v1/me/invoices/:facturaId", async (req, res) => {
+  try {
+    const facturaId = String(req.params.facturaId ?? "").trim();
+    if (!facturaId) return res.status(400).json({ ok: false, error: "MISSING_FACTURA_ID" });
+
+    // Llamada directa a /factura/{id}
+    const raw = await anatodGetFacturaById(facturaId);
+
+    // Si devuelve array, tomamos el primer elemento
+    const item = Array.isArray(raw) ? raw[0] : raw;
+    if (!item) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+
+    const dto = mapFacturaToDTO(item);
+
+    res.json({
+      clientId: Number(DEMO_CLIENT_ID),
+      invoice: dto,
+      source: "anatod:/factura/{id}",
+    });
+  } catch (err: any) {
+    console.error(err);
+    res.status(502).json({
+      ok: false,
+      error: "ANATOD_INVOICE_DETAIL_ERROR",
+      detail: String(err?.message ?? err),
+    });
+  }
+});
+
+/**
+ * ✅ Descarga de “comprobante” sin dependencias:
+ * - retorna HTML como attachment (el usuario puede imprimir “Guardar como PDF”)
+ */
+app.get("/v1/me/invoices/:facturaId/receipt", async (req, res) => {
+  try {
+    const facturaId = String(req.params.facturaId ?? "").trim();
+    if (!facturaId) return res.status(400).json({ ok: false, error: "MISSING_FACTURA_ID" });
+
+    const me = await anatodGetClienteById(DEMO_CLIENT_ID);
+
+    const raw = await anatodGetFacturaById(facturaId);
+    const item = Array.isArray(raw) ? raw[0] : raw;
+    if (!item) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+
+    const dto: any = mapFacturaToDTO(item);
+
+    // Intentamos extraer campos comunes del raw por si el mapper no trae alguno
+    const tipo = dto.type ?? item.factura_tipo ?? "-";
+    const ptoVta = dto.pointOfSale ?? item.factura_puntoventa ?? "-";
+    const nro = dto.number ?? item.factura_numero ?? "-";
+    const issueDate = dto.issueDate ?? safeDate(item.factura_fecha) ?? "-";
+    const dueDate = dto.dueDate ?? safeDate(item.factura_1vencimiento) ?? null;
+    const amount = dto.amount ?? parseMoneyLike(item.factura_importe);
+    const currency = dto.currency ?? "ARS";
+    const detail = dto.detail ?? item.factura_detalle ?? "";
+    const status = dto.status ?? (item.factura_anulada ? "VOIDED" : "OPEN");
+
+    const html = `<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Comprobante Factura ${escapeHtml(facturaId)}</title>
+  <style>
+    body{font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto; background:#f5f7fa; margin:0; padding:24px;}
+    .wrap{max-width:720px; margin:0 auto;}
+    .card{background:#fff; border-radius:16px; box-shadow:0 10px 40px rgba(0,0,0,.10); padding:18px;}
+    .top{display:flex; justify-content:space-between; gap:12px; align-items:flex-start;}
+    .brand{font-weight:900; font-size:18px;}
+    .pill{display:inline-flex; align-items:center; padding:6px 10px; border-radius:999px; font-weight:800; font-size:12px; background:#eef2ff; border:1px solid #c7d2fe; color:#1e3a8a;}
+    h1{margin:0; font-size:18px;}
+    .muted{opacity:.7; font-size:12px; margin-top:4px;}
+    .grid{margin-top:14px; display:grid; gap:10px;}
+    .row{display:flex; justify-content:space-between; gap:12px; font-size:14px; padding:10px 12px; background:#fafbfc; border:1px solid #eef0f3; border-radius:12px;}
+    .k{font-weight:900;}
+    .amt{font-size:26px; font-weight:900; letter-spacing:-.5px; margin-top:12px;}
+    .note{margin-top:12px; font-size:12px; opacity:.8; line-height:1.4; background:#f8fafc; border:1px solid #e2e8f0; padding:12px; border-radius:12px;}
+    .footer{margin-top:14px; font-size:11px; opacity:.7; text-align:center;}
+    @media print { body{background:#fff; padding:0;} .card{box-shadow:none; border:1px solid #e2e8f0;} }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="top">
+        <div>
+          <div class="brand">SSServicios</div>
+          <div class="muted">Comprobante de factura (demo) · Generado: ${escapeHtml(new Date().toISOString())}</div>
+        </div>
+        <div class="pill">${escapeHtml(status)}</div>
+      </div>
+
+      <div style="margin-top:14px;">
+        <h1>Factura ${escapeHtml(tipo)} ${escapeHtml(String(ptoVta))}-${escapeHtml(String(nro))}</h1>
+        <div class="muted">Factura ID: ${escapeHtml(facturaId)} · Cliente (Selfcare): ${escapeHtml(String(DEMO_CLIENT_ID))} · Anatod: ${escapeHtml(String(me.clienteId))}</div>
+      </div>
+
+      <div class="amt">$ ${escapeHtml(Number(amount).toLocaleString("es-AR"))} ${escapeHtml(currency)}</div>
+
+      <div class="grid">
+        <div class="row"><span class="k">Fecha de emisión</span><span>${escapeHtml(issueDate)}</span></div>
+        <div class="row"><span class="k">Vencimiento</span><span>${escapeHtml(dueDate ?? "—")}</span></div>
+        <div class="row"><span class="k">Detalle</span><span style="text-align:right; max-width:420px;">${escapeHtml(detail || "—")}</span></div>
+      </div>
+
+      <div class="note">
+        <b>Importante:</b> este comprobante es una representación para demo. Para un “PDF nativo” se puede generar con un motor de PDF
+        (ej. pdfkit/puppeteer) cuando lo prioricemos en roadmap.
+      </div>
+
+      <div class="footer">SSServicios Selfcare Demo · Facturación / Estado de cuenta</div>
+    </div>
+  </div>
+</body>
+</html>`;
+
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="factura_${facturaId}.html"`);
+    res.status(200).send(html);
+  } catch (err: any) {
+    console.error(err);
+    res.status(502).json({
+      ok: false,
+      error: "ANATOD_RECEIPT_ERROR",
+      detail: String(err?.message ?? err),
+    });
+  }
+});
+
+// ---------- ESTADO DE CUENTA (Account Status) ----------
+app.get("/v1/me/account", async (_req, res) => {
+  try {
+    const c = await anatodGetClienteById(DEMO_CLIENT_ID);
+    const raw: any = (c as any).raw ?? {};
+
+    // Campos típicos del cliente (según tu JSON de ejemplo)
+    const saldo = parseMoneyLike(raw.cliente_saldo);
+    const mora = String(raw.cliente_mora ?? "").toUpperCase() === "Y";
+    const mesesAtraso = Number(raw.cliente_meses_atraso ?? 0) || 0;
+    const cortado = String(raw.cliente_cortado ?? "").toUpperCase() === "Y";
+
+    const habilitacion = safeDate(raw.cliente_habilitacion);
+    const corte = safeDate(raw.cliente_corte);
+
+    // Señales de “estado” (para UI)
+    const status =
+      cortado ? "CORTADO" :
+      mora || mesesAtraso > 0 || saldo > 0 ? "CON_DEUDA" :
+      "AL_DIA";
+
+    res.json({
+      clientId: Number(DEMO_CLIENT_ID),
+      anatodClientId: Number(c.clienteId),
+
+      status,               // AL_DIA | CON_DEUDA | CORTADO
+      balance: saldo,       // saldo numérico
+      currency: "ARS",
+
+      inArrears: mora,
+      monthsInArrears: mesesAtraso,
+      cutOff: cortado,
+
+      habilitacionDate: habilitacion,
+      lastCutDate: corte,
+
+      // Sin PII: nada de DNI, domicilio, teléfonos, etc.
+      source: "anatod:/cliente/{id}",
+    });
+  } catch (err: any) {
+    console.error(err);
+    res.status(502).json({
+      ok: false,
+      error: "ANATOD_ACCOUNT_ERROR",
+      detail: String(err?.message ?? err),
+    });
+  }
+});
+
+// ---------- Reservas ----------
 app.get("/v1/me/reservations/demo-add", async (req, res) => {
   try {
     const amountRaw = String(req.query.amount ?? "").trim();
@@ -202,14 +429,10 @@ app.get("/v1/me/reservations/demo-add", async (req, res) => {
     res.status(201).json({ ok: true, reservation: row });
   } catch (err: any) {
     console.error(err);
-    res
-      .status(500)
-      .json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
+    res.status(500).json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
   }
 });
 
-// TEMP: liberar una reserva (por si querés "rollback" demo)
-// Uso: /v1/me/reservations/demo-release?id=res_123
 app.get("/v1/me/reservations/demo-release", async (req, res) => {
   try {
     const id = String(req.query.id ?? "").trim();
@@ -221,13 +444,10 @@ app.get("/v1/me/reservations/demo-release", async (req, res) => {
     res.json({ ok: true, reservation: updated });
   } catch (err: any) {
     console.error(err);
-    res
-      .status(500)
-      .json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
+    res.status(500).json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
   }
 });
 
-// Listar reservas del cliente (últimas 50)
 app.get("/v1/me/reservations", async (_req, res) => {
   try {
     const rows = await listReservationsByClient(Number(DEMO_CLIENT_ID));
@@ -242,8 +462,7 @@ app.get("/v1/me/reservations", async (_req, res) => {
   }
 });
 
-// COMPRA FINANCIADA (DEMO REAL): crea order + reserva + adicional (3 cuotas)
-// Uso: /v1/me/purchase/financed?amount=120000&desc=Compra%20Demo%20Pack%20X
+// ---------- Compra financiada ----------
 app.get("/v1/me/purchase/financed", async (req, res) => {
   try {
     const amountRaw = String(req.query.amount ?? "").trim();
@@ -376,7 +595,7 @@ app.get("/v1/me/purchase/financed", async (req, res) => {
   }
 });
 
-// TEMP: crear una orden demo desde el navegador (luego lo borramos)
+// ---------- Órdenes ----------
 app.get("/v1/me/orders/demo-create", async (req, res) => {
   try {
     const orderId = `ord_${Date.now()}`;
@@ -395,30 +614,22 @@ app.get("/v1/me/orders/demo-create", async (req, res) => {
     res.status(201).json({ ok: true, order });
   } catch (err: any) {
     console.error(err);
-    res
-      .status(500)
-      .json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
+    res.status(500).json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
   }
 });
 
-// Listado de órdenes del cliente (lee Neon)
 app.get("/v1/me/orders", async (_req, res) => {
   try {
     const orders = await listOrdersByClient(DEMO_CLIENT_ID);
     res.json({ clientId: Number(DEMO_CLIENT_ID), orders });
   } catch (err: any) {
     console.error(err);
-    res
-      .status(500)
-      .json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
+    res.status(500).json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
   }
 });
 
-// TEMP: reconciliar órdenes BUY_FINANCED en PENDIENTE según eventos (deja el demo prolijo)
-// Uso: /v1/me/orders/reconcile
 app.get("/v1/me/orders/reconcile", async (_req, res) => {
   try {
-    // hoy usamos la función existente (solo PENDIENTE)
     const pending = await listPendingBuyFinancedByClient(Number(DEMO_CLIENT_ID));
 
     let updatedToApplied = 0;
@@ -431,7 +642,6 @@ app.get("/v1/me/orders/reconcile", async (_req, res) => {
       const events = await listOrderEvents(o.id);
       const types = new Set(events.map((e) => e.event_type));
 
-      // Reglas “más sólidas”: pedimos adicional + consumo de reserva para APLICADO
       const hasAdicionalCreated = types.has("ADICIONAL_CREATED");
       const hasReservationConsumed = types.has("RESERVATION_CONSUMED");
       const hasAdicionalFailed = types.has("ADICIONAL_FAILED");
@@ -446,22 +656,13 @@ app.get("/v1/me/orders/reconcile", async (_req, res) => {
         await addOrderEvent(o.id, "STATUS_UPDATED", { status: "APLICADO", via: "reconcile" });
 
         updatedToApplied++;
-        touched.push({
-          orderId: o.id,
-          from: o.status,
-          to: "APLICADO",
-          reason: "adicional+reserva_consumida",
-        });
+        touched.push({ orderId: o.id, from: o.status, to: "APLICADO", reason: "adicional+reserva_consumida" });
         continue;
       }
 
       if (hasAdicionalFailed) {
         await setOrderStatus(o.id, "EN_PROCESO");
-        await addOrderEvent(o.id, "RECONCILED", {
-          from: o.status,
-          to: "EN_PROCESO",
-          rule: "ADICIONAL_FAILED",
-        });
+        await addOrderEvent(o.id, "RECONCILED", { from: o.status, to: "EN_PROCESO", rule: "ADICIONAL_FAILED" });
         await addOrderEvent(o.id, "STATUS_UPDATED", { status: "EN_PROCESO", via: "reconcile" });
 
         updatedToInProcess++;
@@ -492,7 +693,6 @@ app.get("/v1/me/orders/reconcile", async (_req, res) => {
   }
 });
 
-// Endpoint helper para crear una orden demo (sirve para testear DB rápido)
 app.post("/v1/me/orders/demo", async (req, res) => {
   try {
     const orderId = `ord_${Date.now()}`;
@@ -510,9 +710,7 @@ app.post("/v1/me/orders/demo", async (req, res) => {
     res.status(201).json({ ok: true, order });
   } catch (err: any) {
     console.error(err);
-    res
-      .status(500)
-      .json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
+    res.status(500).json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
   }
 });
 
