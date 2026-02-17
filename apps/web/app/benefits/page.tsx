@@ -245,16 +245,11 @@ export default function BenefitsPage() {
               Tier {tier}
             </div>
 
+            {/* ✅ CTA: solo SSStore */}
             <div style={benefitCtaRow}>
               <button style={storeBtn} onClick={openStore}>
                 🛒 Usar beneficio en SSStore
               </button>
-
-              <Link href="/services" style={{ textDecoration: "none", flex: "1 1 240px" }}>
-                <Btn style={{ width: "100%" }} title="Ver tus servicios contratados">
-                  Ver servicios
-                </Btn>
-              </Link>
             </div>
 
             <div style={benefitHint}>
