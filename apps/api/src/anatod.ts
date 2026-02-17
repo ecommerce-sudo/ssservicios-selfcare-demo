@@ -6,76 +6,72 @@ type AnatodCliente = {
   clienteScoringFinanciable?: string | number | null;
 };
 
-type AnatodFactura = {
-  factura_id?: number | string;
+type AnatodPaginated<T> = {
+  current_page?: number;
+  data?: T[];
+  first_page_url?: string;
+  from?: number;
+  last_page?: number;
+  last_page_url?: string;
+  links?: any;
+  next_page_url?: string | null;
+  path?: string;
+  per_page?: number;
+  prev_page_url?: string | null;
+  to?: number;
+  total?: number;
+};
+
+export type AnatodFactura = {
+  factura_id: number;
   factura_tipo?: string;
-  factura_puntoventa?: number | string;
-  factura_numero?: number | string;
-  factura_importe?: string | number | null;
-  factura_fecha?: string | null;
-  factura_fecha_real?: string | null;
-  factura_1vencimiento?: string | null;
-  factura_2vencimiento?: string | null;
+  factura_puntoventa?: number;
+  factura_numero?: number;
+  factura_importe?: string | number;
+  factura_cliente?: number;
+  factura_fecha?: string;
+  factura_1vencimiento?: string;
+  factura_2vencimiento?: string;
   factura_3vencimiento?: string | null;
-  factura_anulada?: number | string | null;
-  factura_detalle?: string | null;
-  factura_moneda?: string | number | null;
-  factura_cliente?: number | string | null;
+  factura_detalle?: string;
+  factura_anulada?: 0 | 1 | number;
+};
+
+export type AnatodCobranza = {
+  cobranza_id: number;
+  cobranza_fecha?: string;
+  cobranza_importe?: string | number;
+  cobranza_cliente?: number;
+  cobranza_detalle?: string;
+  cobranza_medio_pago?: string;
+};
+
+export type AnatodFacturaPrint = {
+  url?: string;
+  link?: string;
+  pdf?: string;
 };
 
 function parseMoneyLike(value: unknown): number {
   if (value === null || value === undefined) return 0;
   const s = String(value).trim();
   if (!s) return 0;
-  const n = Number(s.replace(/"/g, "").replace(",", "."));
+  const n = Number(s.replace(/"/g, ""));
   return Number.isFinite(n) ? n : 0;
 }
 
-function isValidDate(s?: string | null) {
-  return !!s && s !== "0000-00-00";
-}
-
-function displayNumber(f: AnatodFactura) {
-  const tipo = (f.factura_tipo ?? "").trim();
-  const pv = String(f.factura_puntoventa ?? "").padStart(4, "0");
-  const num = String(f.factura_numero ?? "").padStart(8, "0");
-  const core = `${pv}-${num}`;
-  return tipo ? `${tipo} ${core}` : core;
-}
-
-function currencyFromFactura(_f: AnatodFactura): string {
-  // Si más adelante mapeás factura_moneda con catálogo, lo cambiamos.
-  return "ARS";
-}
-
-export function mapFacturaToDTO(f: AnatodFactura) {
-  const due =
-    (isValidDate(f.factura_1vencimiento) && f.factura_1vencimiento) ||
-    (isValidDate(f.factura_2vencimiento) && f.factura_2vencimiento) ||
-    (isValidDate(f.factura_3vencimiento) && f.factura_3vencimiento) ||
-    null;
-
-  const isVoided = Number(f.factura_anulada ?? 0) === 1;
-
-  return {
-    invoiceId: Number(f.factura_id),
-    displayNumber: displayNumber(f),
-    amount: parseMoneyLike(f.factura_importe),
-    currency: currencyFromFactura(f),
-    issuedAt: (f.factura_fecha_real || f.factura_fecha || null) as string | null,
-    dueDate: due as string | null,
-    status: isVoided ? "VOIDED" : "ISSUED",
-    description: (f.factura_detalle || "").toString().slice(0, 120),
-  };
-}
-
-async function anatodGet(path: string) {
+function getAnatodEnv() {
   const base = process.env.ANATOD_BASE_URL; // ej: https://api.anatod.ar/api
   const apiKey = process.env.ANATOD_API_KEY;
 
   if (!base) throw new Error("Missing env ANATOD_BASE_URL");
   if (!apiKey) throw new Error("Missing env ANATOD_API_KEY");
 
+  return { base, apiKey };
+}
+
+async function anatodGetJSON<T>(path: string): Promise<T> {
+  const { base, apiKey } = getAnatodEnv();
   const url = `${base}${path.startsWith("/") ? "" : "/"}${path}`;
 
   const res = await fetch(url, {
@@ -88,18 +84,20 @@ async function anatodGet(path: string) {
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`ANATOD_GET_FAILED url=${url} status=${res.status} body=${text.slice(0, 300)}`);
+    throw new Error(
+      `ANATOD_HTTP_FAILED status=${res.status} url=${url} body=${text.slice(0, 300)}`
+    );
   }
 
-  const json = (await res.json()) as any;
-  return json;
+  return (await res.json()) as T;
 }
 
 export async function anatodGetClienteById(clienteId: number | string) {
-  const json = await anatodGet(`/cliente/${clienteId}`);
+  const json = await anatodGetJSON<any>(`/cliente/${clienteId}`);
 
   // Algunas APIs devuelven {data:{...}} y otras el objeto directo
-  const cliente: AnatodCliente = json && typeof json === "object" && "data" in json ? json.data : json;
+  const cliente: AnatodCliente =
+    json && typeof json === "object" && "data" in json ? json.data : json;
 
   const financiable = parseMoneyLike(cliente.clienteScoringFinanciable);
   const scoring = parseMoneyLike(cliente.clienteScoring);
@@ -116,17 +114,63 @@ export async function anatodGetClienteById(clienteId: number | string) {
 }
 
 export async function anatodListFacturasByCliente(clienteId: number | string) {
-  const json = await anatodGet(`/cliente/${clienteId}/facturas`);
+  // Docs: GET /cliente/{cliente_id}/facturas
+  const json = await anatodGetJSON<AnatodPaginated<AnatodFactura> | AnatodFactura[]>(
+    `/cliente/${clienteId}/facturas`
+  );
 
-  // Anatod suele devolver { current_page, data: [...] }
-  const data = json && typeof json === "object" && Array.isArray(json.data) ? json.data : Array.isArray(json) ? json : [];
-
-  return data as AnatodFactura[];
+  if (Array.isArray(json)) {
+    return { current_page: 1, data: json } as AnatodPaginated<AnatodFactura>;
+  }
+  return json as AnatodPaginated<AnatodFactura>;
 }
 
-export async function anatodGetFacturaById(facturaId: number | string) {
-  const json = await anatodGet(`/factura/${facturaId}`);
+export async function anatodListCobranzasByCliente(clienteId: number | string) {
+  // Docs: GET /cliente/{cliente_id}/cobranzas
+  const json = await anatodGetJSON<AnatodPaginated<AnatodCobranza> | AnatodCobranza[]>(
+    `/cliente/${clienteId}/cobranzas`
+  );
 
-  const factura: AnatodFactura = json && typeof json === "object" && "data" in json ? json.data : json;
-  return factura;
+  if (Array.isArray(json)) {
+    return { current_page: 1, data: json } as AnatodPaginated<AnatodCobranza>;
+  }
+  return json as AnatodPaginated<AnatodCobranza>;
+}
+
+export async function anatodFacturaPrintLink(facturaId: number | string) {
+  // Docs: GET /factura/{id}/print
+  const json = await anatodGetJSON<any>(`/factura/${facturaId}/print`);
+  const obj: AnatodFacturaPrint =
+    json && typeof json === "object" && "data" in json ? (json.data as any) : (json as any);
+  return obj;
+}
+
+export function normalizeFactura(f: AnatodFactura) {
+  const amount = parseMoneyLike(f.factura_importe);
+  const anulada = Number(f.factura_anulada ?? 0) === 1;
+
+  const numero = [f.factura_tipo, f.factura_puntoventa, f.factura_numero]
+    .filter((x) => x !== undefined && x !== null && String(x).length > 0)
+    .join("-");
+
+  return {
+    id: Number(f.factura_id),
+    number: numero || String(f.factura_id),
+    date: f.factura_fecha ?? null,
+    due1: f.factura_1vencimiento ?? null,
+    due2: f.factura_2vencimiento ?? null,
+    description: f.factura_detalle ?? "",
+    amount,
+    canceled: anulada,
+  };
+}
+
+export function normalizeCobranza(c: AnatodCobranza) {
+  return {
+    id: Number(c.cobranza_id),
+    date: c.cobranza_fecha ?? null,
+    description: c.cobranza_detalle ?? "",
+    amount: parseMoneyLike(c.cobranza_importe),
+    method: c.cobranza_medio_pago ?? null,
+  };
 }
