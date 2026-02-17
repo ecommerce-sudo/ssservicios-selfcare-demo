@@ -94,13 +94,52 @@ async function anatodGetFacturaById(facturaId: number | string) {
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`ANATOD_GET_FACTURA_FAILED status=${res.status} body=${text.slice(0, 300)}`);
+    throw new Error(
+      `ANATOD_GET_FACTURA_FAILED status=${res.status} body=${text.slice(0, 300)}`
+    );
   }
 
   const json = (await res.json()) as any;
   // a veces viene {data:[{...}]} o {data:{...}} o directo
-  if (json && typeof json === "object" && "data" in json) return json.data;
+  if (json && typeof json === "object" && "data" in json) return (json as any).data;
   return json;
+}
+
+/**
+ * ✅ NUEVO: Llamada directa a Anatod: /factura/{facturaId}/print
+ * Devuelve { urlFactura: "https://....pdf" } (S3)
+ */
+async function anatodFacturaPrintLink(facturaId: number | string) {
+  const base = process.env.ANATOD_BASE_URL; // ej: https://api.anatod.ar/api
+  const apiKey = process.env.ANATOD_API_KEY;
+
+  if (!base) throw new Error("Missing env ANATOD_BASE_URL");
+  if (!apiKey) throw new Error("Missing env ANATOD_API_KEY");
+
+  const id = String(facturaId).trim();
+  if (!id) throw new Error("Missing facturaId");
+
+  const url = `${base}/factura/${encodeURIComponent(id)}/print`;
+
+  const res = await fetch(url, {
+    method: "GET",
+    headers: { accept: "application/json", "x-api-key": apiKey },
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `ANATOD_FACTURA_PRINT_FAILED status=${res.status} body=${text.slice(0, 300)}`
+    );
+  }
+
+  const json = (await res.json()) as any;
+
+  // esperado: { urlFactura: "..." } (a veces puede venir anidado)
+  const urlFactura =
+    json?.urlFactura ?? json?.data?.urlFactura ?? json?.url ?? json?.data?.url;
+
+  return { raw: json, urlFactura: urlFactura ? String(urlFactura) : "" };
 }
 
 // ---------- Healthcheck ----------
@@ -177,7 +216,6 @@ app.get("/v1/me/invoices", async (req, res) => {
     const raw = await anatodListFacturasByCliente(anatodClientId);
     const mapped = (raw.data ?? []).map(mapFacturaToDTO);
 
-
     // Orden: vencimiento asc (null al final)
     mapped.sort((a: any, b: any) => {
       const ad = a.dueDate ? new Date(a.dueDate).getTime() : Number.POSITIVE_INFINITY;
@@ -209,10 +247,12 @@ app.get("/v1/me/invoices/next", async (_req, res) => {
     const raw = await anatodListFacturasByCliente(anatodClientId);
     const mapped = (raw.data ?? []).map(mapFacturaToDTO);
 
-
     const candidates = mapped
       .filter((x: any) => x.status !== "VOIDED" && !!x.dueDate)
-      .sort((a: any, b: any) => new Date(a.dueDate as string).getTime() - new Date(b.dueDate as string).getTime());
+      .sort(
+        (a: any, b: any) =>
+          new Date(a.dueDate as string).getTime() - new Date(b.dueDate as string).getTime()
+      );
 
     res.json({
       clientId: Number(DEMO_CLIENT_ID),
@@ -255,6 +295,56 @@ app.get("/v1/me/invoices/:facturaId", async (req, res) => {
     res.status(502).json({
       ok: false,
       error: "ANATOD_INVOICE_DETAIL_ERROR",
+      detail: String(err?.message ?? err),
+    });
+  }
+});
+
+/**
+ * ✅ NUEVO: PDF nativo (Anatod → S3) vía redirect:
+ * - tu API NO proxynea bytes
+ * - NO expone API key
+ * - Render no paga ancho de banda
+ */
+app.get("/v1/me/invoices/:facturaId/print", async (req, res) => {
+  try {
+    const facturaId = String(req.params.facturaId ?? "").trim();
+    if (!facturaId) return res.status(400).json({ ok: false, error: "MISSING_FACTURA_ID" });
+
+    // sanity: demo only ids numéricos
+    if (!/^\d+$/.test(facturaId)) {
+      return res.status(400).json({ ok: false, error: "INVALID_FACTURA_ID" });
+    }
+
+    // ✅ Validación “pro” (segura) sin depender de nuevos endpoints:
+    // listamos facturas del cliente y verificamos pertenencia antes de pedir el print
+    const me = await anatodGetClienteById(DEMO_CLIENT_ID);
+    const anatodClientId = Number(me.clienteId);
+
+    const rawList = await anatodListFacturasByCliente(anatodClientId);
+    const list = Array.isArray((rawList as any)?.data) ? (rawList as any).data : [];
+
+    const found = list.find((f: any) => String(f?.factura_id ?? f?.id ?? f?.facturaId) === facturaId);
+    if (!found) {
+      return res.status(404).json({ ok: false, error: "INVOICE_NOT_FOUND_FOR_CLIENT" });
+    }
+
+    const print = await anatodFacturaPrintLink(facturaId);
+
+    if (!print.urlFactura) {
+      return res.status(502).json({
+        ok: false,
+        error: "PRINT_LINK_MISSING",
+        raw: print.raw,
+      });
+    }
+
+    return res.redirect(302, print.urlFactura);
+  } catch (err: any) {
+    console.error(err);
+    return res.status(502).json({
+      ok: false,
+      error: "ANATOD_PRINT_ERROR",
       detail: String(err?.message ?? err),
     });
   }
@@ -318,14 +408,18 @@ app.get("/v1/me/invoices/:facturaId/receipt", async (req, res) => {
       <div class="top">
         <div>
           <div class="brand">SSServicios</div>
-          <div class="muted">Comprobante de factura (demo) · Generado: ${escapeHtml(new Date().toISOString())}</div>
+          <div class="muted">Comprobante de factura (demo) · Generado: ${escapeHtml(
+            new Date().toISOString()
+          )}</div>
         </div>
         <div class="pill">${escapeHtml(status)}</div>
       </div>
 
       <div style="margin-top:14px;">
         <h1>Factura ${escapeHtml(tipo)} ${escapeHtml(String(ptoVta))}-${escapeHtml(String(nro))}</h1>
-        <div class="muted">Factura ID: ${escapeHtml(facturaId)} · Cliente (Selfcare): ${escapeHtml(String(DEMO_CLIENT_ID))} · Anatod: ${escapeHtml(String(me.clienteId))}</div>
+        <div class="muted">Factura ID: ${escapeHtml(facturaId)} · Cliente (Selfcare): ${escapeHtml(
+      String(DEMO_CLIENT_ID)
+    )} · Anatod: ${escapeHtml(String(me.clienteId))}</div>
       </div>
 
       <div class="amt">$ ${escapeHtml(Number(amount).toLocaleString("es-AR"))} ${escapeHtml(currency)}</div>
@@ -333,7 +427,9 @@ app.get("/v1/me/invoices/:facturaId/receipt", async (req, res) => {
       <div class="grid">
         <div class="row"><span class="k">Fecha de emisión</span><span>${escapeHtml(issueDate)}</span></div>
         <div class="row"><span class="k">Vencimiento</span><span>${escapeHtml(dueDate ?? "—")}</span></div>
-        <div class="row"><span class="k">Detalle</span><span style="text-align:right; max-width:420px;">${escapeHtml(detail || "—")}</span></div>
+        <div class="row"><span class="k">Detalle</span><span style="text-align:right; max-width:420px;">${escapeHtml(
+      detail || "—"
+    )}</span></div>
       </div>
 
       <div class="note">
@@ -377,16 +473,18 @@ app.get("/v1/me/account", async (_req, res) => {
 
     // Señales de “estado” (para UI)
     const status =
-      cortado ? "CORTADO" :
-      mora || mesesAtraso > 0 || saldo > 0 ? "CON_DEUDA" :
-      "AL_DIA";
+      cortado
+        ? "CORTADO"
+        : mora || mesesAtraso > 0 || saldo > 0
+          ? "CON_DEUDA"
+          : "AL_DIA";
 
     res.json({
       clientId: Number(DEMO_CLIENT_ID),
       anatodClientId: Number(c.clienteId),
 
-      status,               // AL_DIA | CON_DEUDA | CORTADO
-      balance: saldo,       // saldo numérico
+      status, // AL_DIA | CON_DEUDA | CORTADO
+      balance: saldo, // saldo numérico
       currency: "ARS",
 
       inArrears: mora,
@@ -658,13 +756,22 @@ app.get("/v1/me/orders/reconcile", async (_req, res) => {
         await addOrderEvent(o.id, "STATUS_UPDATED", { status: "APLICADO", via: "reconcile" });
 
         updatedToApplied++;
-        touched.push({ orderId: o.id, from: o.status, to: "APLICADO", reason: "adicional+reserva_consumida" });
+        touched.push({
+          orderId: o.id,
+          from: o.status,
+          to: "APLICADO",
+          reason: "adicional+reserva_consumida",
+        });
         continue;
       }
 
       if (hasAdicionalFailed) {
         await setOrderStatus(o.id, "EN_PROCESO");
-        await addOrderEvent(o.id, "RECONCILED", { from: o.status, to: "EN_PROCESO", rule: "ADICIONAL_FAILED" });
+        await addOrderEvent(o.id, "RECONCILED", {
+          from: o.status,
+          to: "EN_PROCESO",
+          rule: "ADICIONAL_FAILED",
+        });
         await addOrderEvent(o.id, "STATUS_UPDATED", { status: "EN_PROCESO", via: "reconcile" });
 
         updatedToInProcess++;
