@@ -11,6 +11,20 @@ type MeResponse = {
   currency: string;
 };
 
+type ServiceRow = {
+  id: string;
+  type: "INTERNET" | "MOBILE" | string;
+  name: string;
+  status: "ACTIVE" | "SUSPENDED" | "CANCELED" | string;
+  extra?: string | null;
+};
+
+type ServicesResponse = {
+  clientId: number;
+  services: ServiceRow[];
+  source: string;
+};
+
 const DEFAULT_API_BASE = "https://ssservicios-selfcare-demo.onrender.com";
 const DEFAULT_STORE_URL = "https://ssstore.com.ar";
 
@@ -18,59 +32,32 @@ type Tier = "INFINIUM" | "CLASSIC" | "BLACK";
 
 function getTier(cupo: number): { tier: Tier; accent: string; bg: string } {
   if (cupo < 200000) {
-    return {
-      tier: "INFINIUM",
-      accent: "#16a34a",
-      bg: "linear-gradient(135deg, #00b09b 0%, #96c93d 100%)",
-    };
+    return { tier: "INFINIUM", accent: "#16a34a", bg: "linear-gradient(135deg, #00b09b 0%, #96c93d 100%)" };
   }
   if (cupo < 500000) {
-    return {
-      tier: "CLASSIC",
-      accent: "#0891b2",
-      bg: "linear-gradient(135deg, #1A2980 0%, #26D0CE 100%)",
-    };
+    return { tier: "CLASSIC", accent: "#0891b2", bg: "linear-gradient(135deg, #1A2980 0%, #26D0CE 100%)" };
   }
-  return {
-    tier: "BLACK",
-    accent: "#111827",
-    bg: "linear-gradient(135deg, #232526 0%, #414345 100%)",
-  };
+  return { tier: "BLACK", accent: "#111827", bg: "linear-gradient(135deg, #232526 0%, #414345 100%)" };
 }
 
-type Service = {
-  id: string;
-  type: "INTERNET" | "MOBILE" | "TV" | "OTHER";
-  name: string;
-  status: "ACTIVE" | "SUSPENDED" | "INACTIVE";
-  extra?: string;
-};
+function serviceLabel(type: string) {
+  if (type === "INTERNET") return "Internet Hogar";
+  if (type === "MOBILE") return "SSMóvil";
+  return type;
+}
 
-// MOCK: reemplazar por endpoint real (/v1/me/services) cuando lo tengamos
-const servicesMock: Service[] = [
-  {
-    id: "svc_internet_1",
-    type: "INTERNET",
-    name: "(YACIMIENTO) Abono Yacimiento",
-    status: "ACTIVE",
-    extra: "Internet Hogar",
-  },
-  {
-    id: "svc_mobile_1",
-    type: "MOBILE",
-    name: "(IG1) SSMovil Plan 1.5GB Empleados",
-    status: "ACTIVE",
-    extra: "Línea móvil",
-  },
-  // Si querés mostrar 3 servicios para que se vea “full”, descomentá:
-  // { id: "svc_tv_1", type: "TV", name: "Pack TV (Demo)", status: "ACTIVE", extra: "TV" },
-];
+function statusLabel(status: string) {
+  if (status === "ACTIVE") return "ACTIVO";
+  if (status === "SUSPENDED") return "SUSPENDIDO";
+  if (status === "CANCELED") return "CANCELADO";
+  return status;
+}
 
-function labelType(t: Service["type"]) {
-  if (t === "INTERNET") return "Internet";
-  if (t === "MOBILE") return "Móvil";
-  if (t === "TV") return "TV";
-  return "Servicio";
+function statusColor(status: string) {
+  if (status === "ACTIVE") return { bg: "#E8FFF1", border: "#b7f3ce", fg: "#0d7a37", dot: "#22c55e" };
+  if (status === "SUSPENDED") return { bg: "#fff7ed", border: "#fed7aa", fg: "#9a3412", dot: "#f97316" };
+  if (status === "CANCELED") return { bg: "#fff1f2", border: "#fecdd3", fg: "#9f1239", dot: "#fb7185" };
+  return { bg: "#eef2ff", border: "#c7d2fe", fg: "#1e3a8a", dot: "#6366f1" };
 }
 
 export default function Page() {
@@ -78,7 +65,9 @@ export default function Page() {
   const STORE_URL = useMemo(() => process.env.NEXT_PUBLIC_STORE_URL || DEFAULT_STORE_URL, []);
 
   const [me, setMe] = useState<MeResponse | null>(null);
+  const [services, setServices] = useState<ServiceRow[]>([]);
   const [loadingMe, setLoadingMe] = useState(false);
+  const [loadingServices, setLoadingServices] = useState(false);
 
   const [amount, setAmount] = useState<string>("120000");
   const [desc, setDesc] = useState<string>("Compra Demo Pack X");
@@ -122,8 +111,23 @@ export default function Page() {
     }
   }
 
+  async function loadServices() {
+    setLoadingServices(true);
+    try {
+      const data = (await fetchJSON("/v1/me/services")) as ServicesResponse;
+      setServices(Array.isArray(data.services) ? data.services : []);
+    } catch (e: any) {
+      console.error(e);
+      setServices([]);
+      setActionError(String(e?.message ?? e));
+    } finally {
+      setLoadingServices(false);
+    }
+  }
+
   useEffect(() => {
     loadMe();
+    loadServices();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -139,6 +143,7 @@ export default function Page() {
       const data = await fetchJSON(`/v1/me/purchase/financed?amount=${qAmount}&desc=${qDesc}`);
       setActionResult(data);
       await loadMe();
+      await loadServices();
     } catch (e: any) {
       console.error(e);
       setActionError(String(e?.message ?? e));
@@ -155,6 +160,7 @@ export default function Page() {
       const data = await fetchJSON("/v1/me/orders/reconcile");
       setActionResult(data);
       await loadMe();
+      await loadServices();
     } catch (e: any) {
       console.error(e);
       setActionError(String(e?.message ?? e));
@@ -241,28 +247,6 @@ export default function Page() {
     fontWeight: 900,
   };
 
-  const pillOk: React.CSSProperties = {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 8,
-    padding: "6px 12px",
-    borderRadius: 999,
-    background: "#E8FFF1",
-    border: "1px solid #b7f3ce",
-    color: "#0d7a37",
-    fontWeight: 900,
-    fontSize: 12,
-    whiteSpace: "nowrap",
-  };
-
-  const dot: React.CSSProperties = {
-    width: 8,
-    height: 8,
-    borderRadius: 99,
-    background: "#22c55e",
-    boxShadow: "0 0 12px rgba(34,197,94,0.7)",
-  };
-
   const adminBtn: React.CSSProperties = {
     padding: "10px 12px",
     borderRadius: 12,
@@ -289,70 +273,8 @@ export default function Page() {
     width: "100%",
   };
 
-  // SERVICES list
-  const serviceList: React.CSSProperties = {
-    marginTop: 12,
-    display: "grid",
-    gap: 12,
-  };
-
-  const serviceCard: React.CSSProperties = {
-    borderRadius: 16,
-    border: "1px solid #eef0f3",
-    background: "#fff",
-    boxShadow: "0 10px 30px rgba(0,0,0,0.06)",
-    padding: 14,
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 12,
-  };
-
-  const serviceMeta: React.CSSProperties = {
-    display: "grid",
-    gap: 6,
-  };
-
-  const serviceType: React.CSSProperties = {
-    fontSize: 12,
-    opacity: 0.75,
-    fontWeight: 800,
-  };
-
-  const serviceName: React.CSSProperties = {
-    fontWeight: 900,
-    fontSize: 14,
-    lineHeight: 1.2,
-  };
-
-  const serviceBadge = (status: Service["status"]): React.CSSProperties => ({
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 8,
-    padding: "6px 10px",
-    borderRadius: 999,
-    fontSize: 12,
-    fontWeight: 900,
-    whiteSpace: "nowrap",
-    background: status === "ACTIVE" ? "#E8FFF1" : "#FFF7ED",
-    border: status === "ACTIVE" ? "1px solid #b7f3ce" : "1px solid #fed7aa",
-    color: status === "ACTIVE" ? "#0d7a37" : "#9a3412",
-  });
-
-  const badgeDot = (status: Service["status"]): React.CSSProperties => ({
-    width: 8,
-    height: 8,
-    borderRadius: 99,
-    background: status === "ACTIVE" ? "#22c55e" : "#f97316",
-    boxShadow:
-      status === "ACTIVE"
-        ? "0 0 12px rgba(34,197,94,0.6)"
-        : "0 0 12px rgba(249,115,22,0.5)",
-  });
-
   // Compact benefit card
   const benefitWrap: React.CSSProperties = {
-    marginTop: 12,
     borderRadius: 16,
     padding: 14,
     color: "white",
@@ -424,6 +346,42 @@ export default function Page() {
     lineHeight: 1.35,
   };
 
+  // SERVICES layout
+  const servicesGrid: React.CSSProperties = {
+    display: "grid",
+    gap: 10,
+    gridTemplateColumns: "1fr",
+    marginTop: 10,
+  };
+
+  const serviceCard: React.CSSProperties = {
+    padding: "12px 12px",
+    borderRadius: 16,
+    border: "1px solid #eef0f3",
+    background: "#fafbfc",
+  };
+
+  const serviceTop: React.CSSProperties = {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 12,
+    alignItems: "flex-start",
+  };
+
+  const serviceName: React.CSSProperties = {
+    fontWeight: 900,
+    fontSize: 14,
+    lineHeight: 1.2,
+  };
+
+  const serviceMeta: React.CSSProperties = {
+    marginTop: 6,
+    display: "grid",
+    gap: 6,
+    fontSize: 13,
+    opacity: 0.9,
+  };
+
   return (
     <div style={shell}>
       {/* Header */}
@@ -441,7 +399,10 @@ export default function Page() {
 
       {/* Drawer */}
       {menuOpen ? (
-        <div onClick={() => setMenuOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 20 }}>
+        <div
+          onClick={() => setMenuOpen(false)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 20 }}
+        >
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
@@ -466,7 +427,10 @@ export default function Page() {
 
             <div style={{ marginTop: 18, display: "grid", gap: 10, fontWeight: 800 }}>
               {["Mi Perfil", "Facturas", "Pagos", "Beneficios", "Salir"].map((it) => (
-                <div key={it} style={{ padding: "10px 10px", borderRadius: 12, background: "rgba(255,255,255,0.12)" }}>
+                <div
+                  key={it}
+                  style={{ padding: "10px 10px", borderRadius: 12, background: "rgba(255,255,255,0.12)" }}
+                >
                   {it}
                 </div>
               ))}
@@ -480,37 +444,86 @@ export default function Page() {
         {/* HOME: Servicios contratados */}
         <section style={{ ...card, marginTop: 18 }}>
           <div style={titleRow}>
-            <h2 style={sectionTitle}>Servicios</h2>
-            <span style={pillOk}>
-              <span style={dot} /> ACTIVO
-            </span>
+            <h2 style={sectionTitle}>Servicios contratados</h2>
+
+            <button
+              style={adminBtn}
+              onClick={loadServices}
+              disabled={loadingServices}
+              title="Refresca /v1/me/services"
+            >
+              {loadingServices ? "Actualizando..." : "Refresh servicios"}
+            </button>
           </div>
 
           <div style={{ marginTop: 8, opacity: 0.75 }}>
-            Home demo: listado de servicios contratados. (Luego lo conectamos a datos reales.)
+            Vista demo: listado de servicios del cliente (mock por ahora).
           </div>
 
-          <div style={serviceList}>
-            {servicesMock.map((s) => (
-              <div key={s.id} style={serviceCard}>
-                <div style={serviceMeta}>
-                  <div style={serviceType}>{labelType(s.type)} {s.extra ? `· ${s.extra}` : ""}</div>
-                  <div style={serviceName}>{s.name}</div>
-                  <div style={{ fontSize: 12, opacity: 0.8 }}>
-                    {me ? `Titular: ${me.name} (ID ${me.clientId})` : "Titular: —"}
-                  </div>
-                </div>
+          <div style={servicesGrid}>
+            {services.length === 0 ? (
+              <div style={{ padding: 12, opacity: 0.75 }}>— No hay servicios para mostrar —</div>
+            ) : (
+              services.map((s) => {
+                const st = statusColor(s.status);
+                return (
+                  <div key={s.id} style={serviceCard}>
+                    <div style={serviceTop}>
+                      <div>
+                        <div style={serviceName}>{s.name}</div>
+                        <div style={{ marginTop: 4, fontSize: 12, opacity: 0.75, fontWeight: 800 }}>
+                          {serviceLabel(s.type)} {s.extra ? `· ${s.extra}` : ""}
+                        </div>
+                      </div>
 
-                <div style={serviceBadge(s.status)}>
-                  <span style={badgeDot(s.status)} />
-                  {s.status === "ACTIVE" ? "ACTIVO" : "EN GESTIÓN"}
-                </div>
-              </div>
-            ))}
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 8,
+                          padding: "6px 10px",
+                          borderRadius: 999,
+                          background: st.bg,
+                          border: `1px solid ${st.border}`,
+                          color: st.fg,
+                          fontWeight: 900,
+                          fontSize: 12,
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        <span
+                          style={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: 99,
+                            background: st.dot,
+                            boxShadow: `0 0 10px ${st.dot}55`,
+                          }}
+                        />
+                        {statusLabel(s.status)}
+                      </span>
+                    </div>
+
+                    <div style={serviceMeta}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                        <span style={{ fontWeight: 900 }}>Cliente</span>
+                        <span>{me ? `${me.name} (ID ${me.clientId})` : "—"}</span>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                        <span style={{ fontWeight: 900 }}>ID servicio</span>
+                        <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}>
+                          {s.id}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
 
           <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button style={adminBtn} onClick={loadMe} disabled={loadingMe}>
+            <button style={adminBtn} onClick={loadMe} disabled={loadingMe} title="Refresca /v1/me">
               {loadingMe ? "Actualizando..." : "Refresh datos"}
             </button>
 
