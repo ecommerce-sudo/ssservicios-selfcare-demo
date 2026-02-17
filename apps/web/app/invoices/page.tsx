@@ -92,9 +92,7 @@ export default function InvoicesPage() {
     setLoading(true);
     setErr(null);
     try {
-      const res = (await fetchJSON(
-        "/v1/me/invoices?limit=20"
-      )) as InvoicesResponse;
+      const res = (await fetchJSON("/v1/me/invoices?limit=20")) as InvoicesResponse;
       setData(res);
     } catch (e: any) {
       console.error(e);
@@ -124,6 +122,10 @@ export default function InvoicesPage() {
     const bt = bd ? new Date(bd).getTime() : Number.POSITIVE_INFINITY;
     return at - bt;
   });
+
+  // ✅ PASO 1: destacamos la “próxima factura” (solo activas)
+  const active = sorted.filter((x) => x.status !== "VOIDED");
+  const nextInvoice = active.length ? active[0] : null;
 
   function invoicePdfUrl(invoiceId: number) {
     return `${API_BASE}/v1/me/invoices/${invoiceId}/print`;
@@ -233,6 +235,84 @@ export default function InvoicesPage() {
             </div>
           ) : null}
 
+          {/* ✅ PASO 1: Próxima factura */}
+          <SectionTitle>Próxima factura</SectionTitle>
+
+          <div style={{ marginTop: 12 }}>
+            {nextInvoice ? (
+              <div
+                style={{
+                  padding: "12px 12px",
+                  borderRadius: 16,
+                  border: "1px solid #e2e8f0",
+                  background: "#ffffff",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  alignItems: "flex-start",
+                }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                    <div style={{ fontWeight: 900, fontSize: 14 }}>
+                      {nextInvoice.displayNumber || `Factura #${nextInvoice.invoiceId}`}
+                    </div>
+                    <Pill tone={statusTone(nextInvoice.status)}>
+                      {statusLabel(nextInvoice.status)}
+                    </Pill>
+                  </div>
+
+                  <div style={{ marginTop: 6, fontSize: 12, opacity: 0.8, fontWeight: 800 }}>
+                    {nextInvoice.description || "—"}
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 8,
+                      display: "flex",
+                      gap: 10,
+                      flexWrap: "wrap",
+                      fontSize: 12,
+                      opacity: 0.8,
+                    }}
+                  >
+                    <span style={{ fontWeight: 900 }}>Vence:</span>
+                    <span>{fmtDateISO(nextInvoice.dueDate)}</span>
+
+                    <span style={{ fontWeight: 900, marginLeft: 10 }}>Emisión:</span>
+                    <span>{fmtDateISO(nextInvoice.issuedAt)}</span>
+                  </div>
+
+                  <div style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <a
+                      href={invoicePdfUrl(nextInvoice.invoiceId)}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ textDecoration: "none" }}
+                      title="Se abre en una pestaña nueva. Desde el PDF podés descargar o imprimir."
+                    >
+                      <Btn>Ver factura</Btn>
+                    </a>
+                  </div>
+                </div>
+
+                <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                  <div style={{ fontWeight: 900, fontSize: 18 }}>
+                    ${fmtMoney(nextInvoice.amount)}
+                  </div>
+                  <div style={{ fontSize: 12, opacity: 0.8, fontWeight: 800 }}>
+                    {pickCurrency(nextInvoice)}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div style={{ padding: 12, opacity: 0.75 }}>
+                — No hay facturas activas para mostrar —
+              </div>
+            )}
+          </div>
+
+          {/* Listado original */}
           <SectionTitle>Listado</SectionTitle>
 
           <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
@@ -308,13 +388,10 @@ export default function InvoicesPage() {
                         </div>
                       </div>
 
-                      {/* ✅ NUEVO: Ver factura (PDF) */}
+                      {/* Ver factura + comprobante */}
                       <div style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
                         {isVoided ? (
-                          <Btn
-                            disabled
-                            title="Factura anulada: no se habilita la vista PDF en demo."
-                          >
+                          <Btn disabled title="Factura anulada: no se habilita la vista PDF en demo.">
                             Ver factura
                           </Btn>
                         ) : (
