@@ -9,7 +9,6 @@ import {
   addOrderEvent,
   setOrderStatus,
   listPendingBuyFinancedByClient,
-  listBuyFinancedByClientByStatuses,
   listOrderEvents,
 } from "./orders.js";
 
@@ -21,6 +20,9 @@ import {
   listReservationsByClient,
 } from "./reservations.js";
 import { createAriaAdditionalStrict } from "./adicional.js";
+
+// ✅ NUEVO: servicios contratados (demo)
+import { listServicesByClient } from "./services.js";
 
 dotenv.config();
 
@@ -69,8 +71,6 @@ app.get("/v1/me", async (_req, res) => {
       purchaseAvailableOfficial: official,
       purchaseAvailableReserved: reserved,
       purchaseAvailable: available,
-      purchaseAvailableMode: "txn_reserved_only",
-      note: "Disponible = Anatod financiable - reservas ACTIVE (Neon). No descuenta deuda/adicionales ya generados.",
       currency: "ARS",
       source: "anatod:/cliente/{id}",
     });
@@ -79,6 +79,25 @@ app.get("/v1/me", async (_req, res) => {
     res.status(502).json({
       ok: false,
       error: "ANATOD_ERROR",
+      detail: String(err?.message ?? err),
+    });
+  }
+});
+
+// ✅ NUEVO: Servicios contratados (DEMO por ahora)
+app.get("/v1/me/services", async (_req, res) => {
+  try {
+    const services = await listServicesByClient(Number(DEMO_CLIENT_ID));
+    res.json({
+      clientId: Number(DEMO_CLIENT_ID),
+      services,
+      source: "demo:services",
+    });
+  } catch (err: any) {
+    console.error(err);
+    res.status(500).json({
+      ok: false,
+      error: "SERVICES_ERROR",
       detail: String(err?.message ?? err),
     });
   }
@@ -106,7 +125,9 @@ app.get("/v1/me/reservations/demo-add", async (req, res) => {
     res.status(201).json({ ok: true, reservation: row });
   } catch (err: any) {
     console.error(err);
-    res.status(500).json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
+    res
+      .status(500)
+      .json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
   }
 });
 
@@ -123,7 +144,9 @@ app.get("/v1/me/reservations/demo-release", async (req, res) => {
     res.json({ ok: true, reservation: updated });
   } catch (err: any) {
     console.error(err);
-    res.status(500).json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
+    res
+      .status(500)
+      .json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
   }
 });
 
@@ -232,34 +255,34 @@ app.get("/v1/me/purchase/financed", async (req, res) => {
         status: consumed?.status ?? "CONSUMED",
       });
 
-      // 9) Estado final de orden + devolver la orden actualizada (FIX paso 1)
-      const updatedOrder = await setOrderStatus(orderId, "APLICADO");
+      // 9) Estado final de orden
+      await setOrderStatus(orderId, "APLICADO");
       await addOrderEvent(orderId, "STATUS_UPDATED", { status: "APLICADO" });
 
       return res.status(201).json({
         ok: true,
-        order: updatedOrder ?? order,
+        order,
         reservation: consumed ?? reservation,
         adicional: { ok: true, status: adicionalRes.status },
-        status: (updatedOrder?.status ?? "APLICADO"),
+        status: "APLICADO",
       });
     }
 
-    // Si falla el adicional: dejamos reserva ACTIVE y orden EN_PROCESO (devolvemos orden actualizada)
+    // Si falla el adicional: dejamos reserva ACTIVE y orden EN_PROCESO
     await addOrderEvent(orderId, "ADICIONAL_FAILED", {
       status: adicionalRes.status,
       body: adicionalRes.bodyText.slice(0, 500),
     });
 
-    const updatedOrder = await setOrderStatus(orderId, "EN_PROCESO");
+    await setOrderStatus(orderId, "EN_PROCESO");
     await addOrderEvent(orderId, "STATUS_UPDATED", { status: "EN_PROCESO" });
 
     return res.status(502).json({
       ok: false,
       error: "ADICIONAL_FAILED",
-      order: updatedOrder ?? order,
+      order,
       reservation,
-      status: (updatedOrder?.status ?? "EN_PROCESO"),
+      status: "EN_PROCESO",
       adicional: {
         ok: false,
         status: adicionalRes.status,
@@ -295,7 +318,9 @@ app.get("/v1/me/orders/demo-create", async (req, res) => {
     res.status(201).json({ ok: true, order });
   } catch (err: any) {
     console.error(err);
-    res.status(500).json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
+    res
+      .status(500)
+      .json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
   }
 });
 
@@ -303,21 +328,21 @@ app.get("/v1/me/orders/demo-create", async (req, res) => {
 app.get("/v1/me/orders", async (_req, res) => {
   try {
     const orders = await listOrdersByClient(DEMO_CLIENT_ID);
-    res.json({ clientId: DEMO_CLIENT_ID, orders });
+    res.json({ clientId: Number(DEMO_CLIENT_ID), orders });
   } catch (err: any) {
     console.error(err);
-    res.status(500).json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
+    res
+      .status(500)
+      .json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
   }
 });
 
-// TEMP: reconciliar órdenes BUY_FINANCED en PENDIENTE + EN_PROCESO según eventos
+// TEMP: reconciliar órdenes BUY_FINANCED en PENDIENTE según eventos (deja el demo prolijo)
 // Uso: /v1/me/orders/reconcile
 app.get("/v1/me/orders/reconcile", async (_req, res) => {
   try {
-    const candidates = await listBuyFinancedByClientByStatuses(Number(DEMO_CLIENT_ID), [
-      "PENDIENTE",
-      "EN_PROCESO",
-    ]);
+    // hoy usamos la función existente (solo PENDIENTE)
+    const pending = await listPendingBuyFinancedByClient(Number(DEMO_CLIENT_ID));
 
     let updatedToApplied = 0;
     let updatedToInProcess = 0;
@@ -325,10 +350,11 @@ app.get("/v1/me/orders/reconcile", async (_req, res) => {
     const touched: Array<{ orderId: string; from: string; to: string; reason: string }> = [];
     const skipped: Array<{ orderId: string; status: string; foundEvents: string[] }> = [];
 
-    for (const o of candidates) {
+    for (const o of pending) {
       const events = await listOrderEvents(o.id);
       const types = new Set(events.map((e) => e.event_type));
 
+      // Reglas “más sólidas”: pedimos adicional + consumo de reserva para APLICADO
       const hasAdicionalCreated = types.has("ADICIONAL_CREATED");
       const hasReservationConsumed = types.has("RESERVATION_CONSUMED");
       const hasAdicionalFailed = types.has("ADICIONAL_FAILED");
@@ -363,12 +389,12 @@ app.get("/v1/me/orders/reconcile", async (_req, res) => {
     res.json({
       ok: true,
       clientId: Number(DEMO_CLIENT_ID),
-      scanned: candidates.length,
+      scanned: pending.length,
       updatedToApplied,
       updatedToInProcess,
       skipped,
       touched,
-      note: "Reconcile mira BUY_FINANCED en PENDIENTE y EN_PROCESO. Regla APLICADO requiere ADICIONAL_CREATED + RESERVATION_CONSUMED.",
+      note: "Esta reconcile hoy solo mira BUY_FINANCED en PENDIENTE (por función actual). Si querés, la extendemos a EN_PROCESO también.",
     });
   } catch (err: any) {
     console.error(err);
@@ -398,7 +424,9 @@ app.post("/v1/me/orders/demo", async (req, res) => {
     res.status(201).json({ ok: true, order });
   } catch (err: any) {
     console.error(err);
-    res.status(500).json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
+    res
+      .status(500)
+      .json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
   }
 });
 
