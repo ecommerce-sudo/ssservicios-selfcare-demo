@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Btn, Card, Pill, SectionTitle } from "./ui";
 
 type MeResponse = {
@@ -11,6 +11,7 @@ type MeResponse = {
   purchaseAvailableReserved: number;
   purchaseAvailable: number;
   currency: string;
+  anatodClientId?: number;
 };
 
 type ServiceRow = {
@@ -27,31 +28,88 @@ type ServicesResponse = {
   source: string;
 };
 
+type NextInvoiceDTO = {
+  invoiceId: number;
+  displayNumber: string;
+  amount: number;
+  currency: string;
+  issuedAt: string | null;
+  dueDate: string | null;
+  status: "ISSUED" | "VOIDED" | string;
+  description: string;
+};
+
+type NextInvoiceResponse = {
+  clientId: number;
+  anatodClientId: number;
+  nextInvoice: NextInvoiceDTO | null;
+  source: string;
+};
+
+type AccountResponse = {
+  clientId: number;
+  anatodClientId: number;
+  status: "AL_DIA" | "CON_DEUDA" | "CORTADO" | string;
+  balance: number;
+  currency: string;
+  inArrears: boolean;
+  monthsInArrears: number;
+  cutOff: boolean;
+  habilitacionDate: string | null;
+  lastCutDate: string | null;
+  source: string;
+};
+
 const DEFAULT_API_BASE = "https://ssservicios-selfcare-demo.onrender.com";
 const DEFAULT_STORE_URL = "https://ssstore.com.ar";
 
-type Tier = "INFINIUM" | "CLASSIC" | "BLACK";
+const BRAND = "#5ac8fa";
 
-function getTier(cupo: number): { tier: Tier; accent: string; bg: string } {
-  if (cupo < 200000) {
+function fmtMoney(n: number) {
+  return Number(n || 0).toLocaleString("es-AR");
+}
+
+function fmtDateISO(s: string | null) {
+  if (!s) return "—";
+  const [y, m, d] = String(s).split("-");
+  if (!y || !m || !d) return s;
+  return `${d}/${m}/${y}`;
+}
+
+function parseISODateOnly(s: string) {
+  const [y, m, d] = s.split("-").map((x) => Number(x));
+  if (!y || !m || !d) return null;
+  return new Date(y, m - 1, d, 0, 0, 0, 0);
+}
+
+function startOfToday() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+}
+
+function dueBadge(inv: { dueDate: string | null; issuedAt: string | null; status: string }) {
+  if (inv.status === "VOIDED") return null;
+  const base = inv.dueDate || inv.issuedAt;
+  if (!base) return { label: "Sin fecha", tone: "neutral" as const };
+
+  const due = parseISODateOnly(base);
+  if (!due) return { label: "Fecha inválida", tone: "neutral" as const };
+
+  const today = startOfToday();
+  const ms = 24 * 60 * 60 * 1000;
+  const diffDays = Math.round((due.getTime() - today.getTime()) / ms);
+
+  if (diffDays < 0) {
+    const days = Math.abs(diffDays);
     return {
-      tier: "INFINIUM",
-      accent: "#16a34a",
-      bg: "linear-gradient(135deg, #00b09b 0%, #96c93d 100%)",
+      label: days === 1 ? "Vencida hace 1 día" : `Vencida hace ${days} días`,
+      tone: "bad" as const,
     };
   }
-  if (cupo < 500000) {
-    return {
-      tier: "CLASSIC",
-      accent: "#0891b2",
-      bg: "linear-gradient(135deg, #1A2980 0%, #26D0CE 100%)",
-    };
-  }
-  return {
-    tier: "BLACK",
-    accent: "#111827",
-    bg: "linear-gradient(135deg, #232526 0%, #414345 100%)",
-  };
+  if (diffDays === 0) return { label: "Vence hoy", tone: "warn" as const };
+  if (diffDays === 1) return { label: "Vence mañana", tone: "warn" as const };
+  if (diffDays <= 5) return { label: `Vence en ${diffDays} días`, tone: "warn" as const };
+  return { label: `Vence en ${diffDays} días`, tone: "neutral" as const };
 }
 
 function serviceLabel(type: string) {
@@ -74,14 +132,33 @@ function statusTone(status: string): "ok" | "warn" | "bad" | "neutral" {
   return "neutral";
 }
 
+function accountTone(status: string): "ok" | "warn" | "bad" | "neutral" {
+  if (status === "AL_DIA") return "ok";
+  if (status === "CON_DEUDA") return "warn";
+  if (status === "CORTADO") return "bad";
+  return "neutral";
+}
+
+function accountLabel(status: string) {
+  if (status === "AL_DIA") return "AL DÍA";
+  if (status === "CON_DEUDA") return "CON DEUDA";
+  if (status === "CORTADO") return "CORTADO";
+  return status;
+}
+
 export default function Page() {
   const API_BASE = useMemo(() => process.env.NEXT_PUBLIC_API_BASE_URL || DEFAULT_API_BASE, []);
   const STORE_URL = useMemo(() => process.env.NEXT_PUBLIC_STORE_URL || DEFAULT_STORE_URL, []);
 
   const [me, setMe] = useState<MeResponse | null>(null);
   const [services, setServices] = useState<ServiceRow[]>([]);
+  const [nextInvoice, setNextInvoice] = useState<NextInvoiceDTO | null>(null);
+  const [account, setAccount] = useState<AccountResponse | null>(null);
+
   const [loadingMe, setLoadingMe] = useState(false);
   const [loadingServices, setLoadingServices] = useState(false);
+  const [loadingNextInv, setLoadingNextInv] = useState(false);
+  const [loadingAccount, setLoadingAccount] = useState(false);
 
   const [amount, setAmount] = useState<string>("120000");
   const [desc, setDesc] = useState<string>("Compra Demo Pack X");
@@ -116,7 +193,7 @@ export default function Page() {
   async function loadMe() {
     setLoadingMe(true);
     try {
-      const data = await fetchJSON("/v1/me");
+      const data = (await fetchJSON("/v1/me")) as MeResponse;
       setMe(data);
       setActionError(null);
     } catch (e: any) {
@@ -143,9 +220,42 @@ export default function Page() {
     }
   }
 
+  async function loadNextInvoice() {
+    setLoadingNextInv(true);
+    try {
+      const data = (await fetchJSON("/v1/me/invoices/next")) as NextInvoiceResponse;
+      setNextInvoice(data?.nextInvoice ?? null);
+      setActionError(null);
+    } catch (e: any) {
+      console.error(e);
+      setNextInvoice(null);
+      // no lo tratamos como fatal, pero lo mostramos si querés
+      setActionError(String(e?.message ?? e));
+    } finally {
+      setLoadingNextInv(false);
+    }
+  }
+
+  async function loadAccount() {
+    setLoadingAccount(true);
+    try {
+      const data = (await fetchJSON("/v1/me/account")) as AccountResponse;
+      setAccount(data);
+      setActionError(null);
+    } catch (e: any) {
+      console.error(e);
+      setAccount(null);
+      // no fatal para home
+    } finally {
+      setLoadingAccount(false);
+    }
+  }
+
   useEffect(() => {
     loadMe();
     loadServices();
+    loadNextInvoice();
+    loadAccount();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -164,8 +274,7 @@ export default function Page() {
       const data = await fetchJSON(`/v1/me/purchase/financed?amount=${qAmount}&desc=${qDesc}`);
       setActionResult(data);
 
-      await loadMe();
-      await loadServices();
+      await Promise.all([loadMe(), loadServices(), loadNextInvoice(), loadAccount()]);
     } catch (e: any) {
       console.error(e);
       setActionError(String(e?.message ?? e));
@@ -183,8 +292,7 @@ export default function Page() {
       const data = await fetchJSON("/v1/me/orders/reconcile");
       setActionResult(data);
 
-      await loadMe();
-      await loadServices();
+      await Promise.all([loadMe(), loadServices(), loadNextInvoice(), loadAccount()]);
     } catch (e: any) {
       console.error(e);
       setActionError(String(e?.message ?? e));
@@ -197,11 +305,14 @@ export default function Page() {
     window.open(STORE_URL, "_blank", "noopener,noreferrer");
   }
 
-  const fmt = (n: number) => n.toLocaleString("es-AR");
-  const cupo = me?.purchaseAvailable ?? 0;
-  const { tier, accent, bg } = getTier(cupo);
+  function invoicePdfUrl(invoiceId: number) {
+    return `${API_BASE}/v1/me/invoices/${invoiceId}/print`;
+  }
 
-  // ===== Styles puntuales (lo que vale la pena mantener) =====
+  const cupo = me?.purchaseAvailable ?? 0;
+  const currency = (me?.currency ?? "ARS").toUpperCase();
+
+  // ===== Styles (livianos, consistentes) =====
   const shell: React.CSSProperties = {
     minHeight: "100vh",
     background: "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)",
@@ -211,91 +322,86 @@ export default function Page() {
   const container: React.CSSProperties = {
     maxWidth: 720,
     margin: "0 auto",
-    padding: "18px 16px 0",
+    padding: "0 16px 0",
   };
 
-  // Compact benefit card (más “delicada”, menos gigante)
-  const benefitWrap: React.CSSProperties = {
-    borderRadius: 16,
-    padding: 14,
+  const topbar: React.CSSProperties = {
+    background: `linear-gradient(135deg, ${BRAND} 0%, #2aa8db 100%)`,
     color: "white",
-    background: bg,
-    position: "relative",
-    overflow: "hidden",
-    border: "1px solid rgba(255,255,255,0.16)",
-    boxShadow: "0 18px 45px rgba(0,0,0,0.18)",
+    padding: "16px 16px 14px",
+    borderBottomLeftRadius: 18,
+    borderBottomRightRadius: 18,
+    boxShadow: "0 10px 30px rgba(0,0,0,0.12)",
   };
 
-  const benefitTop: React.CSSProperties = {
+  const topbarRow: React.CSSProperties = {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
     gap: 12,
   };
 
-  const tierBadge: React.CSSProperties = {
-    fontSize: 11,
-    fontWeight: 900,
-    letterSpacing: 2.2,
-    opacity: 0.9,
+  const badgePill: React.CSSProperties = {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 8,
     padding: "6px 10px",
     borderRadius: 999,
-    border: "1px solid rgba(255,255,255,0.18)",
-    background: "rgba(0,0,0,0.14)",
+    background: "rgba(255,255,255,0.16)",
+    border: "1px solid rgba(255,255,255,0.22)",
+    fontWeight: 900,
+    fontSize: 12,
     whiteSpace: "nowrap",
   };
 
-  const benefitAmount: React.CSSProperties = {
-    marginTop: 10,
-    fontFamily:
-      "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
-    fontSize: 30,
-    fontWeight: 900,
-    letterSpacing: -1,
-    lineHeight: 1.05,
-    textShadow: "0 4px 10px rgba(0,0,0,0.22)",
-  };
-
-  const benefitCtaRow: React.CSSProperties = {
+  const banner: React.CSSProperties = {
     marginTop: 12,
-    display: "flex",
-    gap: 10,
-    flexWrap: "wrap",
-    alignItems: "center",
-  };
-
-  const benefitBtn: React.CSSProperties = {
-    flex: "1 1 220px",
     padding: "12px 12px",
-    borderRadius: 12,
-    border: "none",
-    cursor: "pointer",
-    fontWeight: 900,
-    letterSpacing: 0.2,
-    color: "#052e2b",
-    backgroundImage: "linear-gradient(135deg, #00C9FF 0%, #92FE9D 100%)",
-    boxShadow: "0 12px 28px rgba(0, 201, 255, 0.30)",
+    borderRadius: 14,
+    background: "rgba(255, 255, 255, 0.92)",
+    border: "1px solid #e6eef5",
+    display: "flex",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12,
   };
 
-  const benefitHint: React.CSSProperties = {
+  const bannerLeft: React.CSSProperties = { display: "flex", gap: 10, alignItems: "flex-start" };
+
+  const quickGrid: React.CSSProperties = {
     marginTop: 10,
-    fontSize: 12,
-    background: "rgba(255,255,255,0.14)",
-    border: "1px solid rgba(255,255,255,0.18)",
-    padding: "10px 12px",
-    borderRadius: 12,
-    lineHeight: 1.35,
-  };
-
-  // SERVICES layout
-  const servicesGrid: React.CSSProperties = {
     display: "grid",
+    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
     gap: 10,
-    gridTemplateColumns: "1fr",
-    marginTop: 10,
   };
 
-  const serviceRowStyle: React.CSSProperties = {
+  const quickItem: React.CSSProperties = {
+    padding: "12px 10px",
+    borderRadius: 16,
+    border: "1px solid #e6eef5",
+    background: "#ffffff",
+    boxShadow: "0 10px 24px rgba(0,0,0,0.06)",
+    textAlign: "center",
+    cursor: "pointer",
+    userSelect: "none",
+  };
+
+  const quickIcon: React.CSSProperties = {
+    width: 44,
+    height: 44,
+    borderRadius: 999,
+    margin: "0 auto",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "rgba(90, 200, 250, 0.16)",
+    border: "1px solid rgba(90, 200, 250, 0.28)",
+    fontSize: 20,
+  };
+
+  const quickText: React.CSSProperties = { marginTop: 8, fontSize: 12, fontWeight: 900, opacity: 0.9 };
+
+  const rowCard: React.CSSProperties = {
     padding: "12px 12px",
     borderRadius: 16,
     border: "1px solid #eef0f3",
@@ -306,44 +412,6 @@ export default function Page() {
     gap: 12,
   };
 
-  const serviceLeft: React.CSSProperties = {
-    display: "flex",
-    gap: 12,
-    alignItems: "flex-start",
-    minWidth: 0,
-  };
-
-  const iconDot: React.CSSProperties = {
-    width: 34,
-    height: 34,
-    borderRadius: 12,
-    background: "rgba(22, 119, 255, 0.10)",
-    border: "1px solid rgba(22, 119, 255, 0.18)",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontWeight: 900,
-    color: "#0f172a",
-    flex: "0 0 auto",
-  };
-
-  const serviceName: React.CSSProperties = {
-    fontWeight: 900,
-    fontSize: 14,
-    lineHeight: 1.2,
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-    maxWidth: "100%",
-  };
-
-  const serviceSub: React.CSSProperties = {
-    marginTop: 4,
-    fontSize: 12,
-    opacity: 0.75,
-    fontWeight: 800,
-  };
-
   const inputStyle: React.CSSProperties = {
     padding: "10px 12px",
     borderRadius: 12,
@@ -351,52 +419,315 @@ export default function Page() {
     width: "100%",
   };
 
+  // Compact highlight card (beneficio)
+  const benefitWrap: React.CSSProperties = {
+    borderRadius: 16,
+    padding: 14,
+    color: "#0f172a",
+    background: "linear-gradient(135deg, rgba(90,200,250,0.20) 0%, rgba(255,255,255,1) 60%)",
+    position: "relative",
+    overflow: "hidden",
+    border: "1px solid #d9effa",
+    boxShadow: "0 18px 45px rgba(0,0,0,0.10)",
+  };
+
+  const benefitAmount: React.CSSProperties = {
+    marginTop: 8,
+    fontFamily:
+      "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+    fontSize: 28,
+    fontWeight: 900,
+    letterSpacing: -1,
+    lineHeight: 1.05,
+  };
+
+  const primaryCtaBtn: React.CSSProperties = {
+    flex: "1 1 220px",
+    padding: "12px 12px",
+    borderRadius: 12,
+    border: "none",
+    cursor: "pointer",
+    fontWeight: 900,
+    letterSpacing: 0.2,
+    color: "#06202a",
+    backgroundImage: `linear-gradient(135deg, ${BRAND} 0%, #9be7ff 100%)`,
+    boxShadow: "0 12px 28px rgba(90, 200, 250, 0.30)",
+  };
+
+  const servicesTop3 = services.slice(0, 3);
+
   return (
     <div style={shell}>
+      {/* Topbar tipo app */}
+      <div style={topbar}>
+        <div style={topbarRow}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 12, opacity: 0.9, fontWeight: 900, letterSpacing: 0.4 }}>
+              SSServicios
+            </div>
+            <div style={{ fontSize: 20, fontWeight: 900, lineHeight: 1.15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              Hola, {me?.name ? me.name : "Cliente"}
+            </div>
+            <div style={{ marginTop: 4, fontSize: 12, opacity: 0.9 }}>
+              Resumen de cuenta y servicios
+            </div>
+          </div>
+
+          <div style={badgePill} title="Cliente demo">
+            <span style={{ width: 10, height: 10, borderRadius: 99, background: "rgba(255,255,255,0.85)" }} />
+            ID {me?.clientId ?? "—"}
+          </div>
+        </div>
+
+        {/* Banner de alertas (placeholder operativo) */}
+        <div style={banner}>
+          <div style={bannerLeft}>
+            <div
+              aria-hidden
+              style={{
+                width: 34,
+                height: 34,
+                borderRadius: 12,
+                background: "rgba(255, 196, 0, 0.18)",
+                border: "1px solid rgba(255, 196, 0, 0.28)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontWeight: 900,
+              }}
+            >
+              ⚠️
+            </div>
+
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: 900, fontSize: 13 }}>
+                Estado operativo
+              </div>
+              <div style={{ fontSize: 12, opacity: 0.9, lineHeight: 1.35 }}>
+                {account?.status === "CORTADO"
+                  ? "Tu servicio figura cortado. Regularizá el estado para reactivar."
+                  : account?.status === "CON_DEUDA"
+                  ? "Tenés saldo pendiente. Revisá la próxima factura para evitar cortes."
+                  : "Sin alertas críticas en este momento (demo)."}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end" }}>
+            <Link href="/invoices" style={{ textDecoration: "none" }}>
+              <Btn>Facturas</Btn>
+            </Link>
+            <Link href="/services" style={{ textDecoration: "none" }}>
+              <Btn>Servicios</Btn>
+            </Link>
+          </div>
+        </div>
+      </div>
+
       <div style={container}>
-        {/* HOME: Servicios contratados */}
-        <Card style={{ marginTop: 0 }}>
+        {/* Próxima factura / estado */}
+        <Card style={{ marginTop: 14 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-            <SectionTitle>Servicios contratados</SectionTitle>
+            <SectionTitle>Próxima factura</SectionTitle>
+
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
+              <Btn
+                onClick={() => loadNextInvoice()}
+                disabled={loadingNextInv}
+                title="Refresca /v1/me/invoices/next"
+              >
+                {loadingNextInv ? "Actualizando..." : "Refresh"}
+              </Btn>
+            </div>
+          </div>
+
+          {nextInvoice ? (
+            <div style={{ marginTop: 10, ...rowCard, background: "#ffffff", border: "1px solid #e6eef5" }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                  <div style={{ fontWeight: 900, fontSize: 14 }}>
+                    {nextInvoice.displayNumber || `Factura #${nextInvoice.invoiceId}`}
+                  </div>
+
+                  {(() => {
+                    const b = dueBadge(nextInvoice);
+                    return b ? <Pill tone={b.tone}>{b.label}</Pill> : null;
+                  })()}
+
+                  <Pill tone={accountTone(account?.status ?? "neutral")}>
+                    {account ? accountLabel(account.status) : "ESTADO"}
+                  </Pill>
+                </div>
+
+                <div style={{ marginTop: 6, fontSize: 12, opacity: 0.8, fontWeight: 800 }}>
+                  {nextInvoice.description || "—"}
+                </div>
+
+                <div style={{ marginTop: 8, display: "flex", gap: 10, flexWrap: "wrap", fontSize: 12, opacity: 0.85 }}>
+                  <span style={{ fontWeight: 900 }}>Vence:</span>
+                  <span>{fmtDateISO(nextInvoice.dueDate)}</span>
+                  <span style={{ fontWeight: 900, marginLeft: 10 }}>Emisión:</span>
+                  <span>{fmtDateISO(nextInvoice.issuedAt)}</span>
+                </div>
+
+                <div style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  {nextInvoice.status === "VOIDED" ? (
+                    <Btn disabled title="Factura anulada">
+                      Ver factura
+                    </Btn>
+                  ) : (
+                    <a
+                      href={invoicePdfUrl(nextInvoice.invoiceId)}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ textDecoration: "none" }}
+                      title="Se abre el PDF en una pestaña nueva"
+                    >
+                      <Btn>Ver factura</Btn>
+                    </a>
+                  )}
+
+                  <Link href="/invoices" style={{ textDecoration: "none" }}>
+                    <Btn>Ver todas</Btn>
+                  </Link>
+                </div>
+              </div>
+
+              <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                <div style={{ fontWeight: 900, fontSize: 18 }}>${fmtMoney(nextInvoice.amount)}</div>
+                <div style={{ fontSize: 12, opacity: 0.85, fontWeight: 800 }}>
+                  {(nextInvoice.currency || currency).toUpperCase()}
+                </div>
+
+                <div style={{ marginTop: 10 }}>
+                  <Btn disabled title="Conectaremos link de cobranzas en roadmap">
+                    Pagar (próximamente)
+                  </Btn>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div style={{ marginTop: 10, padding: 12, opacity: 0.75 }}>
+              — No hay próxima factura disponible —
+            </div>
+          )}
+        </Card>
+
+        {/* Accesos rápidos */}
+        <Card>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+            <SectionTitle>Accesos rápidos</SectionTitle>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
+              <Btn onClick={() => setShowAdmin((v) => !v)} title="Panel técnico (demo)">
+                {showAdmin ? "Ocultar admin" : "Mostrar admin"}
+              </Btn>
+            </div>
+          </div>
+
+          <div style={quickGrid}>
+            <Link href="/invoices" style={{ textDecoration: "none" }}>
+              <div style={quickItem}>
+                <div style={quickIcon}>🧾</div>
+                <div style={quickText}>Facturas</div>
+              </div>
+            </Link>
+
+            <Link href="/services" style={{ textDecoration: "none" }}>
+              <div style={quickItem}>
+                <div style={quickIcon}>🌐</div>
+                <div style={quickText}>Servicios</div>
+              </div>
+            </Link>
+
+            <Link href="/benefits" style={{ textDecoration: "none" }}>
+              <div style={quickItem}>
+                <div style={quickIcon}>🎁</div>
+                <div style={quickText}>Beneficios</div>
+              </div>
+            </Link>
+
+            <div
+              style={quickItem}
+              onClick={openStore}
+              role="button"
+              title="Abre SSStore en una pestaña nueva"
+            >
+              <div style={quickIcon}>🛒</div>
+              <div style={quickText}>SSStore</div>
+            </div>
+
+            <div style={quickItem} title="Próximo: soporte / tickets">
+              <div style={quickIcon}>🛠️</div>
+              <div style={quickText}>Soporte</div>
+            </div>
+
+            <div style={quickItem} title="Próximo: débito automático">
+              <div style={quickIcon}>💳</div>
+              <div style={quickText}>Débito</div>
+            </div>
+
+            <div style={quickItem} title="Próximo: perfil y datos">
+              <div style={quickIcon}>👤</div>
+              <div style={quickText}>Perfil</div>
+            </div>
+
+            <div style={quickItem} title="Más opciones (demo)">
+              <div style={quickIcon}>➕</div>
+              <div style={quickText}>Más</div>
+            </div>
+          </div>
+        </Card>
+
+        {/* Mis servicios (compacto) */}
+        <Card>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+            <SectionTitle>Mis servicios</SectionTitle>
 
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
               <Btn onClick={loadServices} disabled={loadingServices} title="Refresca /v1/me/services">
                 {loadingServices ? "Actualizando..." : "Refresh"}
               </Btn>
 
-              <Link href="/invoices" style={{ textDecoration: "none" }}>
-                <Btn>Facturas</Btn>
+              <Link href="/services" style={{ textDecoration: "none" }}>
+                <Btn>Ver todos</Btn>
               </Link>
             </div>
           </div>
 
           <div style={{ marginTop: 8, opacity: 0.75 }}>
-            Tus servicios activos se actualizan automáticamente desde la API.
+            Resumen rápido (top 3). El detalle completo está en “Servicios”.
           </div>
 
-          <div style={servicesGrid}>
-            {services.length === 0 ? (
+          <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+            {servicesTop3.length === 0 ? (
               <div style={{ padding: 12, opacity: 0.75 }}>— No hay servicios para mostrar —</div>
             ) : (
-              services.map((s) => (
-                <div key={s.id} style={serviceRowStyle}>
-                  <div style={serviceLeft}>
-                    <div style={iconDot} aria-hidden>
+              servicesTop3.map((s) => (
+                <div key={s.id} style={rowCard}>
+                  <div style={{ display: "flex", gap: 12, alignItems: "flex-start", minWidth: 0 }}>
+                    <div
+                      aria-hidden
+                      style={{
+                        width: 34,
+                        height: 34,
+                        borderRadius: 12,
+                        background: "rgba(90, 200, 250, 0.16)",
+                        border: "1px solid rgba(90, 200, 250, 0.28)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontWeight: 900,
+                      }}
+                    >
                       {s.type === "INTERNET" ? "🌐" : s.type === "MOBILE" ? "📱" : "🔧"}
                     </div>
 
                     <div style={{ minWidth: 0 }}>
-                      <div style={serviceName} title={s.name}>
+                      <div style={{ fontWeight: 900, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {s.name}
                       </div>
-                      <div style={serviceSub}>
+                      <div style={{ marginTop: 4, fontSize: 12, opacity: 0.75, fontWeight: 800 }}>
                         {serviceLabel(s.type)} {s.extra ? `· ${s.extra}` : ""}
-                      </div>
-                      <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75 }}>
-                        <span style={{ fontWeight: 900 }}>ID:</span>{" "}
-                        <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}>
-                          {s.id}
-                        </span>
                       </div>
                     </div>
                   </div>
@@ -406,15 +737,97 @@ export default function Page() {
               ))
             )}
           </div>
+        </Card>
 
-          <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
+        {/* Beneficio disponible (branding + liviano) */}
+        <Card>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+            <SectionTitle>Beneficio disponible</SectionTitle>
+
             <Btn onClick={loadMe} disabled={loadingMe} title="Refresca /v1/me">
-              {loadingMe ? "Actualizando..." : "Refresh datos"}
+              {loadingMe ? "Actualizando..." : "Refresh"}
             </Btn>
+          </div>
 
-            <Btn onClick={() => setShowAdmin((v) => !v)} title="Panel técnico de demo">
-              {showAdmin ? "Ocultar admin" : "Mostrar admin"}
-            </Btn>
+          <div style={{ marginTop: 10, opacity: 0.75 }}>
+            Usalo para comprar en <b>SSStore</b> en <b>3 cuotas sin interés</b>.
+          </div>
+
+          <div style={{ marginTop: 12, ...benefitWrap }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+              <div style={{ fontWeight: 900, letterSpacing: -0.2 }}>SSSERVICIOS</div>
+              <div
+                style={{
+                  fontSize: 11,
+                  fontWeight: 900,
+                  padding: "6px 10px",
+                  borderRadius: 999,
+                  border: "1px solid rgba(90, 200, 250, 0.35)",
+                  background: "rgba(90, 200, 250, 0.14)",
+                  whiteSpace: "nowrap",
+                }}
+                title="Beneficio disponible"
+              >
+                {currency}
+              </div>
+            </div>
+
+            <div style={{ marginTop: 10, fontSize: 12, opacity: 0.8, fontWeight: 900, letterSpacing: 1.2 }}>
+              DISPONIBLE HOY
+            </div>
+
+            <div style={benefitAmount}>${fmtMoney(cupo)}</div>
+
+            <div style={{ marginTop: 6, fontSize: 12, opacity: 0.85, fontWeight: 800 }}>
+              {currency} · 3 cuotas sin interés
+            </div>
+
+            <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+              <button style={primaryCtaBtn} onClick={openStore}>
+                🛒 Usar beneficio en SSStore
+              </button>
+
+              <Link href="/benefits" style={{ textDecoration: "none", flex: "1 1 220px" }}>
+                <Btn style={{ width: "100%" }} title="Ver detalle operativo del beneficio">
+                  Ver detalle
+                </Btn>
+              </Link>
+            </div>
+
+            <div
+              style={{
+                marginTop: 10,
+                fontSize: 12,
+                background: "rgba(255,255,255,0.70)",
+                border: "1px solid rgba(90,200,250,0.18)",
+                padding: "10px 12px",
+                borderRadius: 12,
+                lineHeight: 1.35,
+              }}
+            >
+              ℹ️ En checkout elegí <b>"Financiación en Factura SSServicios"</b> e ingresá tu{" "}
+              <b>número de cliente</b>.
+            </div>
+          </div>
+
+          <div style={{ marginTop: 12, fontSize: 13, opacity: 0.85 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+              <span style={{ fontWeight: 900 }}>Cupo oficial</span>
+              <span>{me ? `${fmtMoney(me.purchaseAvailableOfficial)} ${currency}` : "—"}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginTop: 6 }}>
+              <span style={{ fontWeight: 900 }}>Reservado</span>
+              <span>{me ? `${fmtMoney(me.purchaseAvailableReserved)} ${currency}` : "—"}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginTop: 6 }}>
+              <span style={{ fontWeight: 900 }}>Disponible</span>
+              <span>{me ? `${fmtMoney(me.purchaseAvailable)} ${currency}` : "—"}</span>
+            </div>
+
+            <div style={{ marginTop: 10, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+              <span style={{ fontSize: 12, opacity: 0.7 }}>API base</span>
+              <code style={{ fontSize: 12, opacity: 0.9 }}>{API_BASE}</code>
+            </div>
           </div>
 
           {actionError ? (
@@ -432,96 +845,7 @@ export default function Page() {
           ) : null}
         </Card>
 
-        {/* HOME: Beneficio disponible */}
-        <Card>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-            <SectionTitle>Beneficio disponible</SectionTitle>
-
-            <div
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 8,
-                fontWeight: 900,
-                fontSize: 12,
-                color: "#0f172a",
-              }}
-              title="Tier del beneficio"
-            >
-              <span
-                style={{
-                  width: 10,
-                  height: 10,
-                  borderRadius: 99,
-                  background: accent,
-                  boxShadow: "0 0 12px rgba(0,0,0,0.12)",
-                }}
-              />
-              {tier}
-            </div>
-          </div>
-
-          <div style={{ marginTop: 10, opacity: 0.75 }}>
-            Usalo para comprar en <b>SSStore</b> en <b>3 cuotas sin interés</b>.
-          </div>
-
-          <div style={{ marginTop: 12, ...benefitWrap }}>
-            <div style={benefitTop}>
-              <div style={{ fontWeight: 900, letterSpacing: -0.2 }}>SSSERVICIOS</div>
-              <div style={tierBadge}>{tier}</div>
-            </div>
-
-            <div style={{ marginTop: 10, fontSize: 12, opacity: 0.9, fontWeight: 800, letterSpacing: 1.4 }}>
-              DISPONIBLE HOY
-            </div>
-
-            <div style={benefitAmount}>${fmt(cupo)}</div>
-
-            <div style={{ marginTop: 6, fontSize: 12, opacity: 0.9, fontWeight: 800 }}>
-              {me?.currency ?? "ARS"} · 3 cuotas sin interés
-            </div>
-
-            <div style={benefitCtaRow}>
-              <button style={benefitBtn} onClick={openStore}>
-                🛒 Usar beneficio en SSStore
-              </button>
-
-              <Link href="/benefits" style={{ textDecoration: "none", flex: "1 1 220px" }}>
-                <Btn style={{ width: "100%" }} title="Ver detalle operativo del beneficio">
-                  Ver detalle
-                </Btn>
-              </Link>
-            </div>
-
-            <div style={benefitHint}>
-              ℹ️ Al finalizar tu compra elegí <b>"Financiación en Factura SSServicios"</b> e ingresá tu{" "}
-              <b>número de cliente</b>.
-            </div>
-          </div>
-
-          {/* Detalle operativo (resumen) */}
-          <div style={{ marginTop: 12, fontSize: 13, opacity: 0.85 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-              <span style={{ fontWeight: 900 }}>Cupo oficial</span>
-              <span>{me ? `${fmt(me.purchaseAvailableOfficial)} ${me.currency}` : "—"}</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginTop: 6 }}>
-              <span style={{ fontWeight: 900 }}>Reservado</span>
-              <span>{me ? `${fmt(me.purchaseAvailableReserved)} ${me.currency}` : "—"}</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginTop: 6 }}>
-              <span style={{ fontWeight: 900 }}>Disponible</span>
-              <span>{me ? `${fmt(me.purchaseAvailable)} ${me.currency}` : "—"}</span>
-            </div>
-
-            <div style={{ marginTop: 10, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-              <span style={{ fontSize: 12, opacity: 0.7 }}>API base</span>
-              <code style={{ fontSize: 12, opacity: 0.9 }}>{API_BASE}</code>
-            </div>
-          </div>
-        </Card>
-
-        {/* Admin demo */}
+        {/* Admin demo (oculto para presentación) */}
         {showAdmin ? (
           <Card>
             <SectionTitle>Admin demo (técnico)</SectionTitle>
@@ -574,7 +898,9 @@ export default function Page() {
         {/* Footer */}
         <div style={{ marginTop: 18, textAlign: "center", fontSize: 12, opacity: 0.65 }}>
           El beneficio se asigna automáticamente según plan, historial de pagos y antigüedad.
-          <div style={{ marginTop: 8, fontWeight: 700, opacity: 0.7 }}>🔒 Sistema seguro de SSServicios (demo)</div>
+          <div style={{ marginTop: 8, fontWeight: 700, opacity: 0.7 }}>
+            🔒 Sistema seguro de SSServicios (demo)
+          </div>
         </div>
       </div>
     </div>
