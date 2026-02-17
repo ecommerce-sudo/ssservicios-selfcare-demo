@@ -18,12 +18,59 @@ type Tier = "INFINIUM" | "CLASSIC" | "BLACK";
 
 function getTier(cupo: number): { tier: Tier; accent: string; bg: string } {
   if (cupo < 200000) {
-    return { tier: "INFINIUM", accent: "#16a34a", bg: "linear-gradient(135deg, #00b09b 0%, #96c93d 100%)" };
+    return {
+      tier: "INFINIUM",
+      accent: "#16a34a",
+      bg: "linear-gradient(135deg, #00b09b 0%, #96c93d 100%)",
+    };
   }
   if (cupo < 500000) {
-    return { tier: "CLASSIC", accent: "#0891b2", bg: "linear-gradient(135deg, #1A2980 0%, #26D0CE 100%)" };
+    return {
+      tier: "CLASSIC",
+      accent: "#0891b2",
+      bg: "linear-gradient(135deg, #1A2980 0%, #26D0CE 100%)",
+    };
   }
-  return { tier: "BLACK", accent: "#111827", bg: "linear-gradient(135deg, #232526 0%, #414345 100%)" };
+  return {
+    tier: "BLACK",
+    accent: "#111827",
+    bg: "linear-gradient(135deg, #232526 0%, #414345 100%)",
+  };
+}
+
+type Service = {
+  id: string;
+  type: "INTERNET" | "MOBILE" | "TV" | "OTHER";
+  name: string;
+  status: "ACTIVE" | "SUSPENDED" | "INACTIVE";
+  extra?: string;
+};
+
+// MOCK: reemplazar por endpoint real (/v1/me/services) cuando lo tengamos
+const servicesMock: Service[] = [
+  {
+    id: "svc_internet_1",
+    type: "INTERNET",
+    name: "(YACIMIENTO) Abono Yacimiento",
+    status: "ACTIVE",
+    extra: "Internet Hogar",
+  },
+  {
+    id: "svc_mobile_1",
+    type: "MOBILE",
+    name: "(IG1) SSMovil Plan 1.5GB Empleados",
+    status: "ACTIVE",
+    extra: "Línea móvil",
+  },
+  // Si querés mostrar 3 servicios para que se vea “full”, descomentá:
+  // { id: "svc_tv_1", type: "TV", name: "Pack TV (Demo)", status: "ACTIVE", extra: "TV" },
+];
+
+function labelType(t: Service["type"]) {
+  if (t === "INTERNET") return "Internet";
+  if (t === "MOBILE") return "Móvil";
+  if (t === "TV") return "TV";
+  return "Servicio";
 }
 
 export default function Page() {
@@ -242,8 +289,70 @@ export default function Page() {
     width: "100%",
   };
 
+  // SERVICES list
+  const serviceList: React.CSSProperties = {
+    marginTop: 12,
+    display: "grid",
+    gap: 12,
+  };
+
+  const serviceCard: React.CSSProperties = {
+    borderRadius: 16,
+    border: "1px solid #eef0f3",
+    background: "#fff",
+    boxShadow: "0 10px 30px rgba(0,0,0,0.06)",
+    padding: 14,
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+  };
+
+  const serviceMeta: React.CSSProperties = {
+    display: "grid",
+    gap: 6,
+  };
+
+  const serviceType: React.CSSProperties = {
+    fontSize: 12,
+    opacity: 0.75,
+    fontWeight: 800,
+  };
+
+  const serviceName: React.CSSProperties = {
+    fontWeight: 900,
+    fontSize: 14,
+    lineHeight: 1.2,
+  };
+
+  const serviceBadge = (status: Service["status"]): React.CSSProperties => ({
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 8,
+    padding: "6px 10px",
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 900,
+    whiteSpace: "nowrap",
+    background: status === "ACTIVE" ? "#E8FFF1" : "#FFF7ED",
+    border: status === "ACTIVE" ? "1px solid #b7f3ce" : "1px solid #fed7aa",
+    color: status === "ACTIVE" ? "#0d7a37" : "#9a3412",
+  });
+
+  const badgeDot = (status: Service["status"]): React.CSSProperties => ({
+    width: 8,
+    height: 8,
+    borderRadius: 99,
+    background: status === "ACTIVE" ? "#22c55e" : "#f97316",
+    boxShadow:
+      status === "ACTIVE"
+        ? "0 0 12px rgba(34,197,94,0.6)"
+        : "0 0 12px rgba(249,115,22,0.5)",
+  });
+
   // Compact benefit card
   const benefitWrap: React.CSSProperties = {
+    marginTop: 12,
     borderRadius: 16,
     padding: 14,
     color: "white",
@@ -315,24 +424,6 @@ export default function Page() {
     lineHeight: 1.35,
   };
 
-  const serviceGrid: React.CSSProperties = {
-    display: "grid",
-    gap: 10,
-    gridTemplateColumns: "1fr",
-    marginTop: 10,
-    fontSize: 14,
-  };
-
-  const serviceItem: React.CSSProperties = {
-    display: "flex",
-    justifyContent: "space-between",
-    gap: 12,
-    padding: "10px 12px",
-    borderRadius: 14,
-    border: "1px solid #eef0f3",
-    background: "#fafbfc",
-  };
-
   return (
     <div style={shell}>
       {/* Header */}
@@ -350,10 +441,7 @@ export default function Page() {
 
       {/* Drawer */}
       {menuOpen ? (
-        <div
-          onClick={() => setMenuOpen(false)}
-          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 20 }}
-        >
+        <div onClick={() => setMenuOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 20 }}>
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
@@ -378,14 +466,10 @@ export default function Page() {
 
             <div style={{ marginTop: 18, display: "grid", gap: 10, fontWeight: 800 }}>
               {["Mi Perfil", "Facturas", "Pagos", "Beneficios", "Salir"].map((it) => (
-                <div
-                  key={it}
-                  style={{ padding: "10px 10px", borderRadius: 12, background: "rgba(255,255,255,0.12)" }}
-                >
+                <div key={it} style={{ padding: "10px 10px", borderRadius: 12, background: "rgba(255,255,255,0.12)" }}>
                   {it}
                 </div>
               ))}
-
               <div style={{ marginTop: 10, fontSize: 12, opacity: 0.85 }}>Demo UI: el menú es visual por ahora.</div>
             </div>
           </div>
@@ -393,33 +477,36 @@ export default function Page() {
       ) : null}
 
       <div style={container}>
-        {/* HOME: Servicio contratado */}
+        {/* HOME: Servicios contratados */}
         <section style={{ ...card, marginTop: 18 }}>
           <div style={titleRow}>
-            <h2 style={sectionTitle}>Servicio contratado</h2>
+            <h2 style={sectionTitle}>Servicios</h2>
             <span style={pillOk}>
               <span style={dot} /> ACTIVO
             </span>
           </div>
 
           <div style={{ marginTop: 8, opacity: 0.75 }}>
-            Vista demo: esto después lo alimentamos con datos reales del servicio.
+            Home demo: listado de servicios contratados. (Luego lo conectamos a datos reales.)
           </div>
 
-          {/* MOCK servicio (hasta que tengamos endpoint) */}
-          <div style={serviceGrid}>
-            <div style={serviceItem}>
-              <span style={{ fontWeight: 900 }}>Plan</span>
-              <span>Internet Hogar (Demo)</span>
-            </div>
-            <div style={serviceItem}>
-              <span style={{ fontWeight: 900 }}>Cliente</span>
-              <span>{me ? `${me.name} (ID ${me.clientId})` : "—"}</span>
-            </div>
-            <div style={serviceItem}>
-              <span style={{ fontWeight: 900 }}>Estado</span>
-              <span style={{ fontWeight: 900, color: "#0d7a37" }}>ACTIVO</span>
-            </div>
+          <div style={serviceList}>
+            {servicesMock.map((s) => (
+              <div key={s.id} style={serviceCard}>
+                <div style={serviceMeta}>
+                  <div style={serviceType}>{labelType(s.type)} {s.extra ? `· ${s.extra}` : ""}</div>
+                  <div style={serviceName}>{s.name}</div>
+                  <div style={{ fontSize: 12, opacity: 0.8 }}>
+                    {me ? `Titular: ${me.name} (ID ${me.clientId})` : "Titular: —"}
+                  </div>
+                </div>
+
+                <div style={serviceBadge(s.status)}>
+                  <span style={badgeDot(s.status)} />
+                  {s.status === "ACTIVE" ? "ACTIVO" : "EN GESTIÓN"}
+                </div>
+              </div>
+            ))}
           </div>
 
           <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -443,25 +530,8 @@ export default function Page() {
         <section style={card}>
           <div style={titleRow}>
             <h2 style={sectionTitle}>Beneficio disponible</h2>
-            <div
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 8,
-                fontWeight: 900,
-                fontSize: 12,
-                color: "#0f172a",
-              }}
-            >
-              <span
-                style={{
-                  width: 10,
-                  height: 10,
-                  borderRadius: 99,
-                  background: accent,
-                  boxShadow: "0 0 12px rgba(0,0,0,0.12)",
-                }}
-              />
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 900, fontSize: 12, color: "#0f172a" }}>
+              <span style={{ width: 10, height: 10, borderRadius: 99, background: accent, boxShadow: "0 0 12px rgba(0,0,0,0.12)" }} />
               {tier}
             </div>
           </div>
@@ -538,23 +608,12 @@ export default function Page() {
             <div style={{ marginTop: 14, display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr", alignItems: "end" }}>
               <div>
                 <label style={{ display: "block", fontWeight: 900, marginBottom: 6 }}>Monto (ARS)</label>
-                <input
-                  style={inputStyle}
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  inputMode="numeric"
-                  placeholder="120000"
-                />
+                <input style={inputStyle} value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="numeric" placeholder="120000" />
               </div>
 
               <div>
                 <label style={{ display: "block", fontWeight: 900, marginBottom: 6 }}>Descripción</label>
-                <input
-                  style={inputStyle}
-                  value={desc}
-                  onChange={(e) => setDesc(e.target.value)}
-                  placeholder="Compra Demo Pack X"
-                />
+                <input style={inputStyle} value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Compra Demo Pack X" />
               </div>
             </div>
 
