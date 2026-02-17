@@ -92,7 +92,9 @@ export default function InvoicesPage() {
     setLoading(true);
     setErr(null);
     try {
-      const res = (await fetchJSON("/v1/me/invoices?limit=20")) as InvoicesResponse;
+      const res = (await fetchJSON(
+        "/v1/me/invoices?limit=20"
+      )) as InvoicesResponse;
       setData(res);
     } catch (e: any) {
       console.error(e);
@@ -123,6 +125,10 @@ export default function InvoicesPage() {
     return at - bt;
   });
 
+  function invoicePdfUrl(invoiceId: number) {
+    return `${API_BASE}/v1/me/invoices/${invoiceId}/print`;
+  }
+
   return (
     <div
       style={{
@@ -142,13 +148,22 @@ export default function InvoicesPage() {
           }}
         >
           <div>
-            <h1 style={{ margin: 0, fontSize: 20, fontWeight: 900 }}>Facturas</h1>
+            <h1 style={{ margin: 0, fontSize: 20, fontWeight: 900 }}>
+              Facturas
+            </h1>
             <div style={{ marginTop: 4, fontSize: 13, opacity: 0.75 }}>
               Estado de facturación del cliente (data real desde API).
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <div
+            style={{
+              display: "flex",
+              gap: 10,
+              flexWrap: "wrap",
+              justifyContent: "flex-end",
+            }}
+          >
             <Btn onClick={load} disabled={loading} title="Refresca /v1/me/invoices">
               {loading ? "Actualizando..." : "Refresh"}
             </Btn>
@@ -162,7 +177,15 @@ export default function InvoicesPage() {
         <Card>
           <SectionTitle>Resumen</SectionTitle>
 
-          <div style={{ marginTop: 8, display: "grid", gap: 8, fontSize: 13, opacity: 0.9 }}>
+          <div
+            style={{
+              marginTop: 8,
+              display: "grid",
+              gap: 8,
+              fontSize: 13,
+              opacity: 0.9,
+            }}
+          >
             <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
               <span style={{ fontWeight: 900 }}>Cliente (demo)</span>
               <span>
@@ -183,7 +206,12 @@ export default function InvoicesPage() {
 
             <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
               <span style={{ fontWeight: 900 }}>Fuente</span>
-              <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}>
+              <span
+                style={{
+                  fontFamily:
+                    "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                }}
+              >
                 {API_BASE}
               </span>
             </div>
@@ -209,72 +237,131 @@ export default function InvoicesPage() {
 
           <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
             {sorted.length === 0 ? (
-              <div style={{ padding: 12, opacity: 0.75 }}>— No hay facturas para mostrar —</div>
+              <div style={{ padding: 12, opacity: 0.75 }}>
+                — No hay facturas para mostrar —
+              </div>
             ) : (
-              sorted.map((inv) => (
-                <div
-                  key={inv.invoiceId}
-                  style={{
-                    padding: "12px 12px",
-                    borderRadius: 16,
-                    border: "1px solid #eef0f3",
-                    background: "#fafbfc",
-                    display: "flex",
-                    justifyContent: "space-between",
-                    gap: 12,
-                    alignItems: "flex-start",
-                  }}
-                >
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                      <div style={{ fontWeight: 900, fontSize: 14 }}>
-                        {inv.displayNumber || `Factura #${inv.invoiceId}`}
-                      </div>
-                      <Pill tone={statusTone(inv.status)}>{statusLabel(inv.status)}</Pill>
-                    </div>
+              sorted.map((inv) => {
+                const isVoided = inv.status === "VOIDED";
+                const pdfUrl = invoicePdfUrl(inv.invoiceId);
 
-                    <div style={{ marginTop: 6, fontSize: 12, opacity: 0.8, fontWeight: 800 }}>
-                      {inv.description || "—"}
-                    </div>
-
-                    <div style={{ marginTop: 8, display: "grid", gap: 6, fontSize: 12, opacity: 0.8 }}>
-                      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                        <span style={{ fontWeight: 900 }}>Emisión:</span>
-                        <span>{fmtDateISO(inv.issuedAt)}</span>
-
-                        <span style={{ fontWeight: 900, marginLeft: 10 }}>Vence:</span>
-                        <span>{fmtDateISO(inv.dueDate)}</span>
-                      </div>
-
-                      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                        <span style={{ fontWeight: 900 }}>ID:</span>
-                        <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}>
-                          {inv.invoiceId}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                    <div style={{ fontWeight: 900, fontSize: 16 }}>
-                      ${fmtMoney(inv.amount)}
-                    </div>
-                    <div style={{ fontSize: 12, opacity: 0.8, fontWeight: 800 }}>
-                      {pickCurrency(inv)}
-                    </div>
-
-                    {/* CTA pagar: lo dejamos “prolijo” hasta conectar link de cobranzas */}
-                    <div style={{ marginTop: 10 }}>
-                      <Btn
-                        disabled
-                        title="Cuando conectemos Link de Cobranzas, este botón abre el pago."
+                return (
+                  <div
+                    key={inv.invoiceId}
+                    style={{
+                      padding: "12px 12px",
+                      borderRadius: 16,
+                      border: "1px solid #eef0f3",
+                      background: "#fafbfc",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: 12,
+                      alignItems: "flex-start",
+                    }}
+                  >
+                    <div style={{ minWidth: 0 }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 10,
+                          alignItems: "center",
+                          flexWrap: "wrap",
+                        }}
                       >
-                        Pagar (próximamente)
-                      </Btn>
+                        <div style={{ fontWeight: 900, fontSize: 14 }}>
+                          {inv.displayNumber || `Factura #${inv.invoiceId}`}
+                        </div>
+                        <Pill tone={statusTone(inv.status)}>{statusLabel(inv.status)}</Pill>
+                      </div>
+
+                      <div style={{ marginTop: 6, fontSize: 12, opacity: 0.8, fontWeight: 800 }}>
+                        {inv.description || "—"}
+                      </div>
+
+                      <div
+                        style={{
+                          marginTop: 8,
+                          display: "grid",
+                          gap: 6,
+                          fontSize: 12,
+                          opacity: 0.8,
+                        }}
+                      >
+                        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                          <span style={{ fontWeight: 900 }}>Emisión:</span>
+                          <span>{fmtDateISO(inv.issuedAt)}</span>
+
+                          <span style={{ fontWeight: 900, marginLeft: 10 }}>Vence:</span>
+                          <span>{fmtDateISO(inv.dueDate)}</span>
+                        </div>
+
+                        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                          <span style={{ fontWeight: 900 }}>ID:</span>
+                          <span
+                            style={{
+                              fontFamily:
+                                "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                            }}
+                          >
+                            {inv.invoiceId}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* ✅ NUEVO: Ver factura (PDF) */}
+                      <div style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                        {isVoided ? (
+                          <Btn
+                            disabled
+                            title="Factura anulada: no se habilita la vista PDF en demo."
+                          >
+                            Ver factura
+                          </Btn>
+                        ) : (
+                          <a
+                            href={pdfUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{ textDecoration: "none" }}
+                            title="Se abre en una pestaña nueva. Desde el PDF podés descargar o imprimir."
+                          >
+                            <Btn>Ver factura</Btn>
+                          </a>
+                        )}
+
+                        <a
+                          href={`${API_BASE}/v1/me/invoices/${inv.invoiceId}/receipt`}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{ textDecoration: "none" }}
+                          title="Comprobante HTML para demo (descargable)."
+                        >
+                          <Btn>Comprobante</Btn>
+                        </a>
+                      </div>
+                    </div>
+
+                    <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                      <div style={{ fontWeight: 900, fontSize: 16 }}>
+                        ${fmtMoney(inv.amount)}
+                      </div>
+                      <div style={{ fontSize: 12, opacity: 0.8, fontWeight: 800 }}>
+                        {pickCurrency(inv)}
+                      </div>
+
+                      {/* CTA pagar: lo dejamos “prolijo” hasta conectar link de cobranzas */}
+                      <div style={{ marginTop: 10 }}>
+                        <Btn
+                          disabled
+                          title="Cuando conectemos Link de Cobranzas, este botón abre el pago."
+                        >
+                          Pagar (próximamente)
+                        </Btn>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
 
