@@ -8,8 +8,8 @@ import {
   createOrder,
   addOrderEvent,
   setOrderStatus,
-  // 👇 NUEVO: este lo agregás en orders.ts (Paso 1)
-  listBuyFinancedByClientInStatuses,
+  listPendingBuyFinancedByClient,
+  listBuyFinancedByClientByStatuses,
   listOrderEvents,
 } from "./orders.js";
 
@@ -69,6 +69,8 @@ app.get("/v1/me", async (_req, res) => {
       purchaseAvailableOfficial: official,
       purchaseAvailableReserved: reserved,
       purchaseAvailable: available,
+      purchaseAvailableMode: "txn_reserved_only",
+      note: "Disponible = Anatod financiable - reservas ACTIVE (Neon). No descuenta deuda/adicionales ya generados.",
       currency: "ARS",
       source: "anatod:/cliente/{id}",
     });
@@ -104,9 +106,7 @@ app.get("/v1/me/reservations/demo-add", async (req, res) => {
     res.status(201).json({ ok: true, reservation: row });
   } catch (err: any) {
     console.error(err);
-    res
-      .status(500)
-      .json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
+    res.status(500).json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
   }
 });
 
@@ -123,9 +123,7 @@ app.get("/v1/me/reservations/demo-release", async (req, res) => {
     res.json({ ok: true, reservation: updated });
   } catch (err: any) {
     console.error(err);
-    res
-      .status(500)
-      .json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
+    res.status(500).json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
   }
 });
 
@@ -234,35 +232,34 @@ app.get("/v1/me/purchase/financed", async (req, res) => {
         status: consumed?.status ?? "CONSUMED",
       });
 
-      // 9) Estado final de orden
-     const updatedOrder = await setOrderStatus(orderId, "APLICADO");
-await addOrderEvent(orderId, "STATUS_UPDATED", { status: "APLICADO" });
+      // 9) Estado final de orden + devolver la orden actualizada (FIX paso 1)
+      const updatedOrder = await setOrderStatus(orderId, "APLICADO");
+      await addOrderEvent(orderId, "STATUS_UPDATED", { status: "APLICADO" });
 
-return res.status(201).json({
-  ok: true,
-  order: updatedOrder ?? order, // si por algo no vuelve row, no rompemos
-  reservation: consumed ?? reservation,
-  adicional: { ok: true, status: adicionalRes.status },
-  status: "APLICADO",
-});
-
+      return res.status(201).json({
+        ok: true,
+        order: updatedOrder ?? order,
+        reservation: consumed ?? reservation,
+        adicional: { ok: true, status: adicionalRes.status },
+        status: (updatedOrder?.status ?? "APLICADO"),
+      });
     }
 
-    // Si falla el adicional: dejamos reserva ACTIVE y orden EN_PROCESO
+    // Si falla el adicional: dejamos reserva ACTIVE y orden EN_PROCESO (devolvemos orden actualizada)
     await addOrderEvent(orderId, "ADICIONAL_FAILED", {
       status: adicionalRes.status,
       body: adicionalRes.bodyText.slice(0, 500),
     });
 
-    await setOrderStatus(orderId, "EN_PROCESO");
+    const updatedOrder = await setOrderStatus(orderId, "EN_PROCESO");
     await addOrderEvent(orderId, "STATUS_UPDATED", { status: "EN_PROCESO" });
 
     return res.status(502).json({
       ok: false,
       error: "ADICIONAL_FAILED",
-      order,
+      order: updatedOrder ?? order,
       reservation,
-      status: "EN_PROCESO",
+      status: (updatedOrder?.status ?? "EN_PROCESO"),
       adicional: {
         ok: false,
         status: adicionalRes.status,
@@ -298,9 +295,7 @@ app.get("/v1/me/orders/demo-create", async (req, res) => {
     res.status(201).json({ ok: true, order });
   } catch (err: any) {
     console.error(err);
-    res
-      .status(500)
-      .json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
+    res.status(500).json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
   }
 });
 
@@ -308,28 +303,24 @@ app.get("/v1/me/orders/demo-create", async (req, res) => {
 app.get("/v1/me/orders", async (_req, res) => {
   try {
     const orders = await listOrdersByClient(DEMO_CLIENT_ID);
-    res.json({ clientId: Number(DEMO_CLIENT_ID), orders });
+    res.json({ clientId: DEMO_CLIENT_ID, orders });
   } catch (err: any) {
     console.error(err);
-    res
-      .status(500)
-      .json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
+    res.status(500).json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
   }
 });
 
-// TEMP: reconciliar órdenes BUY_FINANCED en PENDIENTE/EN_PROCESO/FALLIDO según eventos (demo prolijo)
+// TEMP: reconciliar órdenes BUY_FINANCED en PENDIENTE + EN_PROCESO según eventos
 // Uso: /v1/me/orders/reconcile
 app.get("/v1/me/orders/reconcile", async (_req, res) => {
   try {
-    const candidates = await listBuyFinancedByClientInStatuses(Number(DEMO_CLIENT_ID), [
+    const candidates = await listBuyFinancedByClientByStatuses(Number(DEMO_CLIENT_ID), [
       "PENDIENTE",
       "EN_PROCESO",
-      "FALLIDO",
     ]);
 
     let updatedToApplied = 0;
     let updatedToInProcess = 0;
-    let updatedToFailed = 0;
 
     const touched: Array<{ orderId: string; from: string; to: string; reason: string }> = [];
     const skipped: Array<{ orderId: string; status: string; foundEvents: string[] }> = [];
@@ -341,43 +332,32 @@ app.get("/v1/me/orders/reconcile", async (_req, res) => {
       const hasAdicionalCreated = types.has("ADICIONAL_CREATED");
       const hasReservationConsumed = types.has("RESERVATION_CONSUMED");
       const hasAdicionalFailed = types.has("ADICIONAL_FAILED");
-      const hasReservedCredit = types.has("RESERVED_CREDIT");
 
-      let desired: "APLICADO" | "EN_PROCESO" | "FALLIDO" | null = null;
-      let reason = "";
-
-      // Regla fuerte: aplicado solo si adicional creado + reserva consumida
       if (hasAdicionalCreated && hasReservationConsumed) {
-        desired = "APLICADO";
-        reason = "ADICIONAL_CREATED+RESERVATION_CONSUMED";
-      } else if (hasAdicionalFailed) {
-        // cuando falla el adicional, lo llevamos a FALLIDO (más claro que EN_PROCESO)
-        desired = "FALLIDO";
-        reason = "ADICIONAL_FAILED";
-      } else if (hasReservedCredit) {
-        // reservado pero sin resultado final aún => en proceso
-        desired = "EN_PROCESO";
-        reason = "RESERVED_CREDIT (no final events)";
-      } else {
-        skipped.push({ orderId: o.id, status: o.status, foundEvents: Array.from(types) });
+        await setOrderStatus(o.id, "APLICADO");
+        await addOrderEvent(o.id, "RECONCILED", {
+          from: o.status,
+          to: "APLICADO",
+          rule: "ADICIONAL_CREATED+RESERVATION_CONSUMED",
+        });
+        await addOrderEvent(o.id, "STATUS_UPDATED", { status: "APLICADO", via: "reconcile" });
+
+        updatedToApplied++;
+        touched.push({ orderId: o.id, from: o.status, to: "APLICADO", reason: "adicional+reserva_consumida" });
         continue;
       }
 
-      // Idempotente: si ya está en desired, no tocamos
-      if (o.status === desired) {
-        skipped.push({ orderId: o.id, status: o.status, foundEvents: Array.from(types) });
+      if (hasAdicionalFailed) {
+        await setOrderStatus(o.id, "EN_PROCESO");
+        await addOrderEvent(o.id, "RECONCILED", { from: o.status, to: "EN_PROCESO", rule: "ADICIONAL_FAILED" });
+        await addOrderEvent(o.id, "STATUS_UPDATED", { status: "EN_PROCESO", via: "reconcile" });
+
+        updatedToInProcess++;
+        touched.push({ orderId: o.id, from: o.status, to: "EN_PROCESO", reason: "adicional_failed" });
         continue;
       }
 
-      await setOrderStatus(o.id, desired);
-      await addOrderEvent(o.id, "RECONCILED", { from: o.status, to: desired, rule: reason });
-      await addOrderEvent(o.id, "STATUS_UPDATED", { status: desired, via: "reconcile" });
-
-      if (desired === "APLICADO") updatedToApplied++;
-      if (desired === "EN_PROCESO") updatedToInProcess++;
-      if (desired === "FALLIDO") updatedToFailed++;
-
-      touched.push({ orderId: o.id, from: o.status, to: desired, reason });
+      skipped.push({ orderId: o.id, status: o.status, foundEvents: Array.from(types) });
     }
 
     res.json({
@@ -386,10 +366,9 @@ app.get("/v1/me/orders/reconcile", async (_req, res) => {
       scanned: candidates.length,
       updatedToApplied,
       updatedToInProcess,
-      updatedToFailed,
       skipped,
       touched,
-      note: "Reconcile BUY_FINANCED: (ADICIONAL_CREATED+RESERVATION_CONSUMED)=>APLICADO, ADICIONAL_FAILED=>FALLIDO, RESERVED_CREDIT=>EN_PROCESO. Idempotente.",
+      note: "Reconcile mira BUY_FINANCED en PENDIENTE y EN_PROCESO. Regla APLICADO requiere ADICIONAL_CREATED + RESERVATION_CONSUMED.",
     });
   } catch (err: any) {
     console.error(err);
@@ -419,9 +398,7 @@ app.post("/v1/me/orders/demo", async (req, res) => {
     res.status(201).json({ ok: true, order });
   } catch (err: any) {
     console.error(err);
-    res
-      .status(500)
-      .json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
+    res.status(500).json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
   }
 });
 
