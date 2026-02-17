@@ -182,34 +182,10 @@ export function normalizeCobranza(c: AnatodCobranza) {
 }
 
 /**
- * ✅ DTO limpio para front (sin PII) — lo usa tu index.ts (mapFacturaToDTO)
- * Nota: en demo marcamos "VOIDED" si está anulada, sino "OPEN".
- * Si más adelante Anatod expone estado de pago, lo refinamos a "PAID/OVERDUE".
+ * ✅ DTO limpio para front (sin PII)
+ * - "VOIDED" si está anulada
+ * - "OPEN" caso contrario
  */
-export function mapFacturaToDTO(f: AnatodFactura) {
-  const anulada = Number(f.factura_anulada ?? 0) === 1;
-
-  const numero = [f.factura_tipo, f.factura_puntoventa, f.factura_numero]
-    .filter((x) => x !== undefined && x !== null && String(x).length > 0)
-    .join("-");
-
-  const issueDate = safeDate(f.factura_fecha);
-  const dueDate = safeDate(f.factura_1vencimiento);
-
-  return {
-    id: String(f.factura_id),
-    number: numero || String(f.factura_id),
-    type: f.factura_tipo ?? null,
-    pointOfSale: f.factura_puntoventa ?? null,
-    invoiceNumber: f.factura_numero ?? null,
-    amount: parseMoneyLike(f.factura_importe),
-    currency: "ARS",
-    issueDate,
-    dueDate,
-    detail: f.factura_detalle ?? null,
-    status: anulada ? "VOIDED" : "OPEN",
-  };
-}
 export type FacturaDTO = {
   id: number;
   number: string;
@@ -223,13 +199,8 @@ export type FacturaDTO = {
 export function mapFacturaToDTO(f: AnatodFactura): FacturaDTO {
   const n = normalizeFactura(f);
 
-  // Elegimos el primer vencimiento “usable”
-  const due =
-    n.due1 && n.due1 !== "0000-00-00"
-      ? n.due1
-      : n.due2 && n.due2 !== "0000-00-00"
-      ? n.due2
-      : null;
+  // Elegimos el primer vencimiento disponible
+  const due = n.due1 ?? n.due2 ?? null;
 
   return {
     id: n.id,
