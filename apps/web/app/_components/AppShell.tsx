@@ -23,13 +23,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       { label: "Inicio", href: "/" },
       { label: "Servicios", href: "/services" },
       { label: "Beneficios", href: "/benefits" },
+      { label: "Facturas", href: "/invoices" },
     ],
     []
   );
 
   const comingSoon: ComingSoonItem[] = useMemo(
     () => [
-      { label: "Facturas", note: "Próximamente" },
       { label: "Pagos", note: "Próximamente" },
     ],
     []
@@ -124,7 +124,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                     padding: "10px 10px",
                     borderRadius: 12,
                     background: active(it.href) ? "rgba(255,255,255,0.22)" : "rgba(255,255,255,0.12)",
-                    border: active(it.href) ? "1px solid rgba(255,255,255,0.35)" : "1px solid rgba(255,255,255,0.18)",
+                    border: active(it.href)
+                      ? "1px solid rgba(255,255,255,0.35)"
+                      : "1px solid rgba(255,255,255,0.18)",
                     fontWeight: 900,
                     display: "flex",
                     alignItems: "center",
@@ -137,7 +139,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 </Link>
               ))}
 
-              <div style={{ height: 8 }} />
+              {comingSoon.length ? <div style={{ height: 8 }} /> : null}
 
               {comingSoon.map((it) => (
                 <div
@@ -169,7 +171,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
             <div style={{ flex: 1 }} />
 
-            <div style={{ fontSize: 12, opacity: 0.85, borderTop: "1px solid rgba(255,255,255,0.18)", paddingTop: 12 }}>
+            <div
+              style={{
+                fontSize: 12,
+                opacity: 0.85,
+                borderTop: "1px solid rgba(255,255,255,0.18)",
+                paddingTop: 12,
+              }}
+            >
               v1 · Selfcare Demo
             </div>
           </div>
