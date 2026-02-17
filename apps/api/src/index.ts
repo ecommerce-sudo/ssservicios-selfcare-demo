@@ -67,6 +67,11 @@ app.get("/v1/me", async (_req, res) => {
 
     res.json({
       clientId: Number(DEMO_CLIENT_ID),
+
+      // ✅ NUEVO: ID real de Anatod (para facturas / cuenta corriente)
+      // Importante: NO exponemos PII; solo el identificador técnico.
+      anatodClientId: Number(c.clienteId),
+
       name: c.fullName || "Cliente",
       purchaseAvailableOfficial: official,
       purchaseAvailableReserved: reserved,
