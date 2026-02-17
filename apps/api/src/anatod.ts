@@ -6,7 +6,7 @@ type AnatodCliente = {
   clienteScoringFinanciable?: string | number | null;
 };
 
-type AnatodPaginated<T> = {
+export type AnatodPaginated<T> = {
   current_page?: number;
   data?: T[];
   first_page_url?: string;
@@ -58,6 +58,12 @@ function parseMoneyLike(value: unknown): number {
   if (!s) return 0;
   const n = Number(s.replace(/"/g, ""));
   return Number.isFinite(n) ? n : 0;
+}
+
+function safeDate(value: unknown): string | null {
+  const s = String(value ?? "").trim();
+  if (!s || s === "0000-00-00") return null;
+  return s;
 }
 
 function getAnatodEnv() {
@@ -156,9 +162,9 @@ export function normalizeFactura(f: AnatodFactura) {
   return {
     id: Number(f.factura_id),
     number: numero || String(f.factura_id),
-    date: f.factura_fecha ?? null,
-    due1: f.factura_1vencimiento ?? null,
-    due2: f.factura_2vencimiento ?? null,
+    date: safeDate(f.factura_fecha),
+    due1: safeDate(f.factura_1vencimiento),
+    due2: safeDate(f.factura_2vencimiento),
     description: f.factura_detalle ?? "",
     amount,
     canceled: anulada,
@@ -168,9 +174,39 @@ export function normalizeFactura(f: AnatodFactura) {
 export function normalizeCobranza(c: AnatodCobranza) {
   return {
     id: Number(c.cobranza_id),
-    date: c.cobranza_fecha ?? null,
+    date: safeDate(c.cobranza_fecha),
     description: c.cobranza_detalle ?? "",
     amount: parseMoneyLike(c.cobranza_importe),
     method: c.cobranza_medio_pago ?? null,
+  };
+}
+
+/**
+ * ✅ DTO limpio para front (sin PII) — lo usa tu index.ts (mapFacturaToDTO)
+ * Nota: en demo marcamos "VOIDED" si está anulada, sino "OPEN".
+ * Si más adelante Anatod expone estado de pago, lo refinamos a "PAID/OVERDUE".
+ */
+export function mapFacturaToDTO(f: AnatodFactura) {
+  const anulada = Number(f.factura_anulada ?? 0) === 1;
+
+  const numero = [f.factura_tipo, f.factura_puntoventa, f.factura_numero]
+    .filter((x) => x !== undefined && x !== null && String(x).length > 0)
+    .join("-");
+
+  const issueDate = safeDate(f.factura_fecha);
+  const dueDate = safeDate(f.factura_1vencimiento);
+
+  return {
+    id: String(f.factura_id),
+    number: numero || String(f.factura_id),
+    type: f.factura_tipo ?? null,
+    pointOfSale: f.factura_puntoventa ?? null,
+    invoiceNumber: f.factura_numero ?? null,
+    amount: parseMoneyLike(f.factura_importe),
+    currency: "ARS",
+    issueDate,
+    dueDate,
+    detail: f.factura_detalle ?? null,
+    status: anulada ? "VOIDED" : "OPEN",
   };
 }
