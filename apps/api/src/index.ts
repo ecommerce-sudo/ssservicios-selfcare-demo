@@ -12,7 +12,12 @@ import {
   listOrderEvents,
 } from "./orders.js";
 
-import { anatodGetClienteById } from "./anatod.js";
+import {
+  anatodGetClienteById,
+  anatodListFacturasByCliente,
+  mapFacturaToDTO,
+} from "./anatod.js";
+
 import {
   sumActiveReservations,
   createReservation,
@@ -68,7 +73,7 @@ app.get("/v1/me", async (_req, res) => {
     res.json({
       clientId: Number(DEMO_CLIENT_ID),
 
-      // ✅ NUEVO: ID real de Anatod (para facturas / cuenta corriente)
+      // ✅ ID real de Anatod (facturas / cuenta corriente)
       // Importante: NO exponemos PII; solo el identificador técnico.
       anatodClientId: Number(c.clienteId),
 
@@ -89,7 +94,7 @@ app.get("/v1/me", async (_req, res) => {
   }
 });
 
-// ✅ NUEVO: Servicios contratados (DEMO por ahora)
+// ✅ Servicios contratados (DEMO por ahora)
 app.get("/v1/me/services", async (_req, res) => {
   try {
     const services = await listServicesByClient(Number(DEMO_CLIENT_ID));
@@ -103,6 +108,73 @@ app.get("/v1/me/services", async (_req, res) => {
     res.status(500).json({
       ok: false,
       error: "SERVICES_ERROR",
+      detail: String(err?.message ?? err),
+    });
+  }
+});
+
+// ✅ NUEVO: Facturas del cliente (wrapper limpio, sin PII)
+app.get("/v1/me/invoices", async (req, res) => {
+  try {
+    const me = await anatodGetClienteById(DEMO_CLIENT_ID);
+    const anatodClientId = Number(me.clienteId);
+
+    const limit = Math.min(Math.max(Number(req.query.limit ?? 10), 1), 50);
+
+    const raw = await anatodListFacturasByCliente(anatodClientId);
+    const mapped = raw.map(mapFacturaToDTO);
+
+    // Orden: vencimiento asc (null al final)
+    mapped.sort((a: any, b: any) => {
+      const ad = a.dueDate ? new Date(a.dueDate).getTime() : Number.POSITIVE_INFINITY;
+      const bd = b.dueDate ? new Date(b.dueDate).getTime() : Number.POSITIVE_INFINITY;
+      return ad - bd;
+    });
+
+    res.json({
+      clientId: Number(DEMO_CLIENT_ID),
+      anatodClientId,
+      invoices: mapped.slice(0, limit),
+      source: "anatod:/cliente/{id}/facturas",
+    });
+  } catch (err: any) {
+    console.error(err);
+    res.status(502).json({
+      ok: false,
+      error: "ANATOD_INVOICES_ERROR",
+      detail: String(err?.message ?? err),
+    });
+  }
+});
+
+// ✅ NUEVO: Próxima factura (para card Home tipo “vence el …”)
+app.get("/v1/me/invoices/next", async (_req, res) => {
+  try {
+    const me = await anatodGetClienteById(DEMO_CLIENT_ID);
+    const anatodClientId = Number(me.clienteId);
+
+    const raw = await anatodListFacturasByCliente(anatodClientId);
+    const mapped = raw.map(mapFacturaToDTO);
+
+    // candidata: no VOIDED y con dueDate válido
+    const candidates = mapped
+      .filter((x: any) => x.status !== "VOIDED" && !!x.dueDate)
+      .sort(
+        (a: any, b: any) =>
+          new Date(a.dueDate as string).getTime() - new Date(b.dueDate as string).getTime()
+      );
+
+    res.json({
+      clientId: Number(DEMO_CLIENT_ID),
+      anatodClientId,
+      nextInvoice: candidates[0] ?? null,
+      source: "anatod:/cliente/{id}/facturas",
+    });
+  } catch (err: any) {
+    console.error(err);
+    res.status(502).json({
+      ok: false,
+      error: "ANATOD_NEXT_INVOICE_ERROR",
       detail: String(err?.message ?? err),
     });
   }
@@ -374,13 +446,22 @@ app.get("/v1/me/orders/reconcile", async (_req, res) => {
         await addOrderEvent(o.id, "STATUS_UPDATED", { status: "APLICADO", via: "reconcile" });
 
         updatedToApplied++;
-        touched.push({ orderId: o.id, from: o.status, to: "APLICADO", reason: "adicional+reserva_consumida" });
+        touched.push({
+          orderId: o.id,
+          from: o.status,
+          to: "APLICADO",
+          reason: "adicional+reserva_consumida",
+        });
         continue;
       }
 
       if (hasAdicionalFailed) {
         await setOrderStatus(o.id, "EN_PROCESO");
-        await addOrderEvent(o.id, "RECONCILED", { from: o.status, to: "EN_PROCESO", rule: "ADICIONAL_FAILED" });
+        await addOrderEvent(o.id, "RECONCILED", {
+          from: o.status,
+          to: "EN_PROCESO",
+          rule: "ADICIONAL_FAILED",
+        });
         await addOrderEvent(o.id, "STATUS_UPDATED", { status: "EN_PROCESO", via: "reconcile" });
 
         updatedToInProcess++;
