@@ -1,6 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { Btn, Card, Pill, SectionTitle } from "./ui";
 
 type MeResponse = {
   clientId: number;
@@ -32,12 +34,24 @@ type Tier = "INFINIUM" | "CLASSIC" | "BLACK";
 
 function getTier(cupo: number): { tier: Tier; accent: string; bg: string } {
   if (cupo < 200000) {
-    return { tier: "INFINIUM", accent: "#16a34a", bg: "linear-gradient(135deg, #00b09b 0%, #96c93d 100%)" };
+    return {
+      tier: "INFINIUM",
+      accent: "#16a34a",
+      bg: "linear-gradient(135deg, #00b09b 0%, #96c93d 100%)",
+    };
   }
   if (cupo < 500000) {
-    return { tier: "CLASSIC", accent: "#0891b2", bg: "linear-gradient(135deg, #1A2980 0%, #26D0CE 100%)" };
+    return {
+      tier: "CLASSIC",
+      accent: "#0891b2",
+      bg: "linear-gradient(135deg, #1A2980 0%, #26D0CE 100%)",
+    };
   }
-  return { tier: "BLACK", accent: "#111827", bg: "linear-gradient(135deg, #232526 0%, #414345 100%)" };
+  return {
+    tier: "BLACK",
+    accent: "#111827",
+    bg: "linear-gradient(135deg, #232526 0%, #414345 100%)",
+  };
 }
 
 function serviceLabel(type: string) {
@@ -53,11 +67,11 @@ function statusLabel(status: string) {
   return status;
 }
 
-function statusColor(status: string) {
-  if (status === "ACTIVE") return { bg: "#E8FFF1", border: "#b7f3ce", fg: "#0d7a37", dot: "#22c55e" };
-  if (status === "SUSPENDED") return { bg: "#fff7ed", border: "#fed7aa", fg: "#9a3412", dot: "#f97316" };
-  if (status === "CANCELED") return { bg: "#fff1f2", border: "#fecdd3", fg: "#9f1239", dot: "#fb7185" };
-  return { bg: "#eef2ff", border: "#c7d2fe", fg: "#1e3a8a", dot: "#6366f1" };
+function statusTone(status: string): "ok" | "warn" | "bad" | "neutral" {
+  if (status === "ACTIVE") return "ok";
+  if (status === "SUSPENDED") return "warn";
+  if (status === "CANCELED") return "bad";
+  return "neutral";
 }
 
 export default function Page() {
@@ -77,23 +91,25 @@ export default function Page() {
   const [actionError, setActionError] = useState<string | null>(null);
 
   // UI
-  const [menuOpen, setMenuOpen] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
 
   async function fetchJSON(path: string) {
     const url = `${API_BASE}${path}`;
     const res = await fetch(url, { method: "GET" });
     const text = await res.text();
+
     let data: any = null;
     try {
       data = text ? JSON.parse(text) : null;
     } catch {
       data = { raw: text };
     }
+
     if (!res.ok) {
       const msg = (data && (data.detail || data.error || data.message)) || `HTTP ${res.status} ${res.statusText}`;
       throw new Error(`${msg} | url=${url}`);
     }
+
     return data;
   }
 
@@ -102,6 +118,7 @@ export default function Page() {
     try {
       const data = await fetchJSON("/v1/me");
       setMe(data);
+      setActionError(null);
     } catch (e: any) {
       console.error(e);
       setMe(null);
@@ -116,6 +133,7 @@ export default function Page() {
     try {
       const data = (await fetchJSON("/v1/me/services")) as ServicesResponse;
       setServices(Array.isArray(data.services) ? data.services : []);
+      setActionError(null);
     } catch (e: any) {
       console.error(e);
       setServices([]);
@@ -135,13 +153,17 @@ export default function Page() {
     setActionError(null);
     setActionResult(null);
     setActionLoading("purchase");
+
     try {
       const amt = Number(String(amount).trim());
       if (!Number.isFinite(amt) || amt <= 0) throw new Error("Monto inválido");
+
       const qAmount = encodeURIComponent(String(amt));
       const qDesc = encodeURIComponent(desc.trim() || `Compra App Demo - ${new Date().toISOString()}`);
+
       const data = await fetchJSON(`/v1/me/purchase/financed?amount=${qAmount}&desc=${qDesc}`);
       setActionResult(data);
+
       await loadMe();
       await loadServices();
     } catch (e: any) {
@@ -156,9 +178,11 @@ export default function Page() {
     setActionError(null);
     setActionResult(null);
     setActionLoading("reconcile");
+
     try {
       const data = await fetchJSON("/v1/me/orders/reconcile");
       setActionResult(data);
+
       await loadMe();
       await loadServices();
     } catch (e: any) {
@@ -177,7 +201,7 @@ export default function Page() {
   const cupo = me?.purchaseAvailable ?? 0;
   const { tier, accent, bg } = getTier(cupo);
 
-  // ===== Styles =====
+  // ===== Styles puntuales (lo que vale la pena mantener) =====
   const shell: React.CSSProperties = {
     minHeight: "100vh",
     background: "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)",
@@ -187,93 +211,10 @@ export default function Page() {
   const container: React.CSSProperties = {
     maxWidth: 720,
     margin: "0 auto",
-    padding: "0 16px",
+    padding: "18px 16px 0",
   };
 
-  const header: React.CSSProperties = {
-    background: "#1677ff",
-    color: "white",
-    padding: "14px 16px",
-    position: "sticky",
-    top: 0,
-    zIndex: 10,
-    boxShadow: "0 6px 18px rgba(0,0,0,0.15)",
-  };
-
-  const headerRow: React.CSSProperties = {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-  };
-
-  const brand: React.CSSProperties = {
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-    fontWeight: 900,
-    letterSpacing: -0.3,
-  };
-
-  const burgerBtn: React.CSSProperties = {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
-    border: "1px solid rgba(255,255,255,0.35)",
-    background: "rgba(255,255,255,0.14)",
-    color: "white",
-    cursor: "pointer",
-    fontWeight: 900,
-  };
-
-  const card: React.CSSProperties = {
-    marginTop: 14,
-    background: "white",
-    borderRadius: 18,
-    boxShadow: "0 10px 40px rgba(0,0,0,0.10)",
-    padding: 16,
-  };
-
-  const titleRow: React.CSSProperties = {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 12,
-  };
-
-  const sectionTitle: React.CSSProperties = {
-    margin: 0,
-    fontSize: 18,
-    fontWeight: 900,
-  };
-
-  const adminBtn: React.CSSProperties = {
-    padding: "10px 12px",
-    borderRadius: 12,
-    border: "1px solid #ddd",
-    background: "white",
-    cursor: "pointer",
-    fontWeight: 800,
-  };
-
-  const primaryBtn: React.CSSProperties = {
-    padding: "10px 12px",
-    borderRadius: 12,
-    border: "1px solid rgba(0,0,0,0.06)",
-    background: "#111827",
-    color: "white",
-    cursor: "pointer",
-    fontWeight: 900,
-  };
-
-  const inputStyle: React.CSSProperties = {
-    padding: "10px 12px",
-    borderRadius: 12,
-    border: "1px solid #ccc",
-    width: "100%",
-  };
-
-  // Compact benefit card
+  // Compact benefit card (más “delicada”, menos gigante)
   const benefitWrap: React.CSSProperties = {
     borderRadius: 16,
     padding: 14,
@@ -308,7 +249,7 @@ export default function Page() {
     marginTop: 10,
     fontFamily:
       "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
-    fontSize: 34,
+    fontSize: 30,
     fontWeight: 900,
     letterSpacing: -1,
     lineHeight: 1.05,
@@ -354,197 +295,167 @@ export default function Page() {
     marginTop: 10,
   };
 
-  const serviceCard: React.CSSProperties = {
+  const serviceRowStyle: React.CSSProperties = {
     padding: "12px 12px",
     borderRadius: 16,
     border: "1px solid #eef0f3",
     background: "#fafbfc",
-  };
-
-  const serviceTop: React.CSSProperties = {
     display: "flex",
+    alignItems: "flex-start",
     justifyContent: "space-between",
     gap: 12,
+  };
+
+  const serviceLeft: React.CSSProperties = {
+    display: "flex",
+    gap: 12,
     alignItems: "flex-start",
+    minWidth: 0,
+  };
+
+  const iconDot: React.CSSProperties = {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    background: "rgba(22, 119, 255, 0.10)",
+    border: "1px solid rgba(22, 119, 255, 0.18)",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: 900,
+    color: "#0f172a",
+    flex: "0 0 auto",
   };
 
   const serviceName: React.CSSProperties = {
     fontWeight: 900,
     fontSize: 14,
     lineHeight: 1.2,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    maxWidth: "100%",
   };
 
-  const serviceMeta: React.CSSProperties = {
-    marginTop: 6,
-    display: "grid",
-    gap: 6,
-    fontSize: 13,
-    opacity: 0.9,
+  const serviceSub: React.CSSProperties = {
+    marginTop: 4,
+    fontSize: 12,
+    opacity: 0.75,
+    fontWeight: 800,
+  };
+
+  const inputStyle: React.CSSProperties = {
+    padding: "10px 12px",
+    borderRadius: 12,
+    border: "1px solid #ccc",
+    width: "100%",
   };
 
   return (
     <div style={shell}>
-      {/* Header */}
-      <header style={header}>
-        <div style={headerRow}>
-          <div style={brand}>
-            <span style={{ fontSize: 18 }}>SSServicios</span>
-          </div>
-
-          <button style={burgerBtn} onClick={() => setMenuOpen(true)} aria-label="Menu">
-            ☰
-          </button>
-        </div>
-      </header>
-
-      {/* Drawer */}
-      {menuOpen ? (
-        <div
-          onClick={() => setMenuOpen(false)}
-          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 20 }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              width: 280,
-              height: "100%",
-              background: "#1677ff",
-              color: "white",
-              padding: 16,
-              boxShadow: "10px 0 30px rgba(0,0,0,0.25)",
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div style={{ fontWeight: 900, fontSize: 18 }}>SSServicios</div>
-              <button
-                style={{ ...burgerBtn, width: 38, height: 38, borderRadius: 10 }}
-                onClick={() => setMenuOpen(false)}
-                aria-label="Cerrar"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div style={{ marginTop: 18, display: "grid", gap: 10, fontWeight: 800 }}>
-              {["Mi Perfil", "Facturas", "Pagos", "Beneficios", "Salir"].map((it) => (
-                <div
-                  key={it}
-                  style={{ padding: "10px 10px", borderRadius: 12, background: "rgba(255,255,255,0.12)" }}
-                >
-                  {it}
-                </div>
-              ))}
-              <div style={{ marginTop: 10, fontSize: 12, opacity: 0.85 }}>Demo UI: el menú es visual por ahora.</div>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
       <div style={container}>
         {/* HOME: Servicios contratados */}
-        <section style={{ ...card, marginTop: 18 }}>
-          <div style={titleRow}>
-            <h2 style={sectionTitle}>Servicios contratados</h2>
+        <Card style={{ marginTop: 0 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+            <SectionTitle>Servicios contratados</SectionTitle>
 
-            <button
-              style={adminBtn}
-              onClick={loadServices}
-              disabled={loadingServices}
-              title="Refresca /v1/me/services"
-            >
-              {loadingServices ? "Actualizando..." : "Refresh servicios"}
-            </button>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
+              <Btn onClick={loadServices} disabled={loadingServices} title="Refresca /v1/me/services">
+                {loadingServices ? "Actualizando..." : "Refresh"}
+              </Btn>
+              <Link href="/services" style={{ textDecoration: "none" }}>
+                <Btn>Ver servicios</Btn>
+              </Link>
+            </div>
           </div>
 
           <div style={{ marginTop: 8, opacity: 0.75 }}>
-            Vista demo: listado de servicios del cliente (mock por ahora).
+            Vista demo: listado de servicios del cliente.
           </div>
 
           <div style={servicesGrid}>
             {services.length === 0 ? (
               <div style={{ padding: 12, opacity: 0.75 }}>— No hay servicios para mostrar —</div>
             ) : (
-              services.map((s) => {
-                const st = statusColor(s.status);
-                return (
-                  <div key={s.id} style={serviceCard}>
-                    <div style={serviceTop}>
-                      <div>
-                        <div style={serviceName}>{s.name}</div>
-                        <div style={{ marginTop: 4, fontSize: 12, opacity: 0.75, fontWeight: 800 }}>
-                          {serviceLabel(s.type)} {s.extra ? `· ${s.extra}` : ""}
-                        </div>
-                      </div>
-
-                      <span
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: 8,
-                          padding: "6px 10px",
-                          borderRadius: 999,
-                          background: st.bg,
-                          border: `1px solid ${st.border}`,
-                          color: st.fg,
-                          fontWeight: 900,
-                          fontSize: 12,
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        <span
-                          style={{
-                            width: 8,
-                            height: 8,
-                            borderRadius: 99,
-                            background: st.dot,
-                            boxShadow: `0 0 10px ${st.dot}55`,
-                          }}
-                        />
-                        {statusLabel(s.status)}
-                      </span>
+              services.map((s) => (
+                <div key={s.id} style={serviceRowStyle}>
+                  <div style={serviceLeft}>
+                    <div style={iconDot} aria-hidden>
+                      {s.type === "INTERNET" ? "🌐" : s.type === "MOBILE" ? "📱" : "🔧"}
                     </div>
 
-                    <div style={serviceMeta}>
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-                        <span style={{ fontWeight: 900 }}>Cliente</span>
-                        <span>{me ? `${me.name} (ID ${me.clientId})` : "—"}</span>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={serviceName} title={s.name}>
+                        {s.name}
                       </div>
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-                        <span style={{ fontWeight: 900 }}>ID servicio</span>
+                      <div style={serviceSub}>
+                        {serviceLabel(s.type)} {s.extra ? `· ${s.extra}` : ""}
+                      </div>
+                      <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75 }}>
+                        <span style={{ fontWeight: 900 }}>ID:</span>{" "}
                         <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}>
                           {s.id}
                         </span>
                       </div>
                     </div>
                   </div>
-                );
-              })
+
+                  <Pill tone={statusTone(s.status)}>{statusLabel(s.status)}</Pill>
+                </div>
+              ))
             )}
           </div>
 
           <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button style={adminBtn} onClick={loadMe} disabled={loadingMe} title="Refresca /v1/me">
+            <Btn onClick={loadMe} disabled={loadingMe} title="Refresca /v1/me">
               {loadingMe ? "Actualizando..." : "Refresh datos"}
-            </button>
+            </Btn>
 
-            <button style={adminBtn} onClick={() => setShowAdmin((v) => !v)}>
-              {showAdmin ? "Ocultar admin demo" : "Mostrar admin demo"}
-            </button>
+            <Btn onClick={() => setShowAdmin((v) => !v)} title="Panel técnico de demo">
+              {showAdmin ? "Ocultar admin" : "Mostrar admin"}
+            </Btn>
           </div>
 
           {actionError ? (
-            <div style={{ marginTop: 12, padding: 12, borderRadius: 12, background: "#fff3f3", border: "1px solid #f1b4b4" }}>
+            <div
+              style={{
+                marginTop: 12,
+                padding: 12,
+                borderRadius: 12,
+                background: "#fff3f3",
+                border: "1px solid #f1b4b4",
+              }}
+            >
               <b>Error:</b> <span style={{ fontFamily: "monospace" }}>{actionError}</span>
             </div>
           ) : null}
-        </section>
+        </Card>
 
-        {/* HOME: Beneficio disponible (compacto) */}
-        <section style={card}>
-          <div style={titleRow}>
-            <h2 style={sectionTitle}>Beneficio disponible</h2>
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 900, fontSize: 12, color: "#0f172a" }}>
-              <span style={{ width: 10, height: 10, borderRadius: 99, background: accent, boxShadow: "0 0 12px rgba(0,0,0,0.12)" }} />
+        {/* HOME: Beneficio disponible */}
+        <Card>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+            <SectionTitle>Beneficio disponible</SectionTitle>
+
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                fontWeight: 900,
+                fontSize: 12,
+                color: "#0f172a",
+              }}
+              title="Tier del beneficio"
+            >
+              <span
+                style={{
+                  width: 10,
+                  height: 10,
+                  borderRadius: 99,
+                  background: accent,
+                  boxShadow: "0 0 12px rgba(0,0,0,0.12)",
+                }}
+              />
               {tier}
             </div>
           </div>
@@ -553,7 +464,7 @@ export default function Page() {
             Usalo para comprar en <b>SSStore</b> en <b>3 cuotas sin interés</b>.
           </div>
 
-          <div style={benefitWrap}>
+          <div style={{ marginTop: 12, ...benefitWrap }}>
             <div style={benefitTop}>
               <div style={{ fontWeight: 900, letterSpacing: -0.2 }}>SSSERVICIOS</div>
               <div style={tierBadge}>{tier}</div>
@@ -574,21 +485,20 @@ export default function Page() {
                 🛒 Usar beneficio en SSStore
               </button>
 
-              <button
-                style={{ ...primaryBtn, background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.22)" }}
-                onClick={() => window.alert("Pantalla Beneficios (demo): la armamos en el próximo paso.")}
-                title="En el próximo paso la hacemos pantalla real"
-              >
-                Ver detalle
-              </button>
+              <Link href="/benefits" style={{ textDecoration: "none", flex: "1 1 220px" }}>
+                <Btn style={{ width: "100%" }} title="Ver detalle operativo del beneficio">
+                  Ver detalle
+                </Btn>
+              </Link>
             </div>
 
             <div style={benefitHint}>
-              ℹ️ Al finalizar tu compra elegí <b>"Financiación en Factura SSServicios"</b> e ingresá tu <b>número de cliente</b>.
+              ℹ️ Al finalizar tu compra elegí <b>"Financiación en Factura SSServicios"</b> e ingresá tu{" "}
+              <b>número de cliente</b>.
             </div>
           </div>
 
-          {/* Detalle interno (opcional) */}
+          {/* Detalle operativo (resumen) */}
           <div style={{ marginTop: 12, fontSize: 13, opacity: 0.85 }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
               <span style={{ fontWeight: 900 }}>Cupo oficial</span>
@@ -608,12 +518,12 @@ export default function Page() {
               <code style={{ fontSize: 12, opacity: 0.9 }}>{API_BASE}</code>
             </div>
           </div>
-        </section>
+        </Card>
 
         {/* Admin demo */}
         {showAdmin ? (
-          <section style={card}>
-            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 900 }}>Admin demo (técnico)</h2>
+          <Card>
+            <SectionTitle>Admin demo (técnico)</SectionTitle>
             <div style={{ marginTop: 8, fontSize: 13, opacity: 0.75 }}>
               Esto es para testear el flow sin ensuciar la vista de presentación.
             </div>
@@ -621,32 +531,43 @@ export default function Page() {
             <div style={{ marginTop: 14, display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr", alignItems: "end" }}>
               <div>
                 <label style={{ display: "block", fontWeight: 900, marginBottom: 6 }}>Monto (ARS)</label>
-                <input style={inputStyle} value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="numeric" placeholder="120000" />
+                <input
+                  style={inputStyle}
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  inputMode="numeric"
+                  placeholder="120000"
+                />
               </div>
 
               <div>
                 <label style={{ display: "block", fontWeight: 900, marginBottom: 6 }}>Descripción</label>
-                <input style={inputStyle} value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Compra Demo Pack X" />
+                <input
+                  style={inputStyle}
+                  value={desc}
+                  onChange={(e) => setDesc(e.target.value)}
+                  placeholder="Compra Demo Pack X"
+                />
               </div>
             </div>
 
             <div style={{ display: "flex", gap: 12, marginTop: 12, flexWrap: "wrap" }}>
-              <button style={adminBtn} onClick={runPurchase} disabled={actionLoading !== null}>
+              <Btn onClick={runPurchase} disabled={actionLoading !== null}>
                 {actionLoading === "purchase" ? "Procesando compra..." : "Simular compra financiada"}
-              </button>
+              </Btn>
 
-              <button style={adminBtn} onClick={runReconcile} disabled={actionLoading !== null}>
+              <Btn onClick={runReconcile} disabled={actionLoading !== null}>
                 {actionLoading === "reconcile" ? "Reconciliando..." : "Reconciliar órdenes"}
-              </button>
+              </Btn>
             </div>
 
             <div style={{ marginTop: 14 }}>
               <h3 style={{ marginBottom: 8, fontSize: 14, fontWeight: 900 }}>Resultado</h3>
               <pre style={{ padding: 12, background: "#f7f7f7", borderRadius: 12, overflowX: "auto" }}>
-{actionResult ? JSON.stringify(actionResult, null, 2) : "— (todavía no ejecutaste ninguna acción) —"}
+                {actionResult ? JSON.stringify(actionResult, null, 2) : "— (todavía no ejecutaste ninguna acción) —"}
               </pre>
             </div>
-          </section>
+          </Card>
         ) : null}
 
         {/* Footer */}
