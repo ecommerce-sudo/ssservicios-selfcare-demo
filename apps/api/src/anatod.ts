@@ -210,3 +210,34 @@ export function mapFacturaToDTO(f: AnatodFactura) {
     status: anulada ? "VOIDED" : "OPEN",
   };
 }
+export type FacturaDTO = {
+  id: number;
+  number: string;
+  date: string | null;
+  dueDate: string | null;
+  amount: number;
+  status: "OPEN" | "VOIDED";
+  description: string;
+};
+
+export function mapFacturaToDTO(f: AnatodFactura): FacturaDTO {
+  const n = normalizeFactura(f);
+
+  // Elegimos el primer vencimiento “usable”
+  const due =
+    n.due1 && n.due1 !== "0000-00-00"
+      ? n.due1
+      : n.due2 && n.due2 !== "0000-00-00"
+      ? n.due2
+      : null;
+
+  return {
+    id: n.id,
+    number: n.number,
+    date: n.date,
+    dueDate: due,
+    amount: n.amount,
+    status: n.canceled ? "VOIDED" : "OPEN",
+    description: n.description,
+  };
+}
