@@ -65,6 +65,29 @@ const DEFAULT_STORE_URL = "https://ssstore.com.ar";
 
 const BRAND = "#5ac8fa";
 
+type Tier = "INFINIUM" | "CLASSIC" | "BLACK";
+function getTier(cupo: number): { tier: Tier; accent: string; bg: string } {
+  if (cupo < 200000) {
+    return {
+      tier: "INFINIUM",
+      accent: "#16a34a",
+      bg: "linear-gradient(135deg, #00b09b 0%, #96c93d 100%)",
+    };
+  }
+  if (cupo < 500000) {
+    return {
+      tier: "CLASSIC",
+      accent: "#0891b2",
+      bg: "linear-gradient(135deg, #1A2980 0%, #26D0CE 100%)",
+    };
+  }
+  return {
+    tier: "BLACK",
+    accent: "#111827",
+    bg: "linear-gradient(135deg, #232526 0%, #414345 100%)",
+  };
+}
+
 function fmtMoney(n: number) {
   return Number(n || 0).toLocaleString("es-AR");
 }
@@ -167,7 +190,6 @@ export default function Page() {
   const [actionResult, setActionResult] = useState<any>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  // UI
   const [showAdmin, setShowAdmin] = useState(false);
 
   async function fetchJSON(path: string) {
@@ -229,7 +251,6 @@ export default function Page() {
     } catch (e: any) {
       console.error(e);
       setNextInvoice(null);
-      // no lo tratamos como fatal, pero lo mostramos si querés
       setActionError(String(e?.message ?? e));
     } finally {
       setLoadingNextInv(false);
@@ -241,11 +262,9 @@ export default function Page() {
     try {
       const data = (await fetchJSON("/v1/me/account")) as AccountResponse;
       setAccount(data);
-      setActionError(null);
     } catch (e: any) {
       console.error(e);
       setAccount(null);
-      // no fatal para home
     } finally {
       setLoadingAccount(false);
     }
@@ -311,8 +330,9 @@ export default function Page() {
 
   const cupo = me?.purchaseAvailable ?? 0;
   const currency = (me?.currency ?? "ARS").toUpperCase();
+  const { tier, accent, bg } = getTier(cupo);
 
-  // ===== Styles (livianos, consistentes) =====
+  // ===== Styles =====
   const shell: React.CSSProperties = {
     minHeight: "100vh",
     background: "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)",
@@ -354,11 +374,12 @@ export default function Page() {
     whiteSpace: "nowrap",
   };
 
+  // ✅ Banner con texto oscuro para legibilidad
   const banner: React.CSSProperties = {
     marginTop: 12,
     padding: "12px 12px",
     borderRadius: 14,
-    background: "rgba(255, 255, 255, 0.92)",
+    background: "rgba(255, 255, 255, 0.96)",
     border: "1px solid #e6eef5",
     display: "flex",
     alignItems: "flex-start",
@@ -367,6 +388,19 @@ export default function Page() {
   };
 
   const bannerLeft: React.CSSProperties = { display: "flex", gap: 10, alignItems: "flex-start" };
+  const bannerTitle: React.CSSProperties = { fontWeight: 900, fontSize: 13, color: "#0f172a" };
+  const bannerText: React.CSSProperties = { fontSize: 12, color: "#334155", lineHeight: 1.35 };
+
+  const rowCard: React.CSSProperties = {
+    padding: "12px 12px",
+    borderRadius: 16,
+    border: "1px solid #eef0f3",
+    background: "#fafbfc",
+    display: "flex",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12,
+  };
 
   const quickGrid: React.CSSProperties = {
     marginTop: 10,
@@ -401,17 +435,6 @@ export default function Page() {
 
   const quickText: React.CSSProperties = { marginTop: 8, fontSize: 12, fontWeight: 900, opacity: 0.9 };
 
-  const rowCard: React.CSSProperties = {
-    padding: "12px 12px",
-    borderRadius: 16,
-    border: "1px solid #eef0f3",
-    background: "#fafbfc",
-    display: "flex",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: 12,
-  };
-
   const inputStyle: React.CSSProperties = {
     padding: "10px 12px",
     borderRadius: 12,
@@ -419,29 +442,42 @@ export default function Page() {
     width: "100%",
   };
 
-  // Compact highlight card (beneficio)
+  // Benefit: vuelve el “tier” por escala con tu bg, pero mantenemos el look cuidado
   const benefitWrap: React.CSSProperties = {
     borderRadius: 16,
     padding: 14,
-    color: "#0f172a",
-    background: "linear-gradient(135deg, rgba(90,200,250,0.20) 0%, rgba(255,255,255,1) 60%)",
+    color: "white",
+    background: bg,
     position: "relative",
     overflow: "hidden",
-    border: "1px solid #d9effa",
-    boxShadow: "0 18px 45px rgba(0,0,0,0.10)",
+    border: "1px solid rgba(255,255,255,0.16)",
+    boxShadow: "0 18px 45px rgba(0,0,0,0.18)",
+  };
+
+  const tierBadge: React.CSSProperties = {
+    fontSize: 11,
+    fontWeight: 900,
+    letterSpacing: 2.2,
+    opacity: 0.9,
+    padding: "6px 10px",
+    borderRadius: 999,
+    border: "1px solid rgba(255,255,255,0.18)",
+    background: "rgba(0,0,0,0.14)",
+    whiteSpace: "nowrap",
   };
 
   const benefitAmount: React.CSSProperties = {
-    marginTop: 8,
+    marginTop: 10,
     fontFamily:
       "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
-    fontSize: 28,
+    fontSize: 30,
     fontWeight: 900,
     letterSpacing: -1,
     lineHeight: 1.05,
+    textShadow: "0 4px 10px rgba(0,0,0,0.22)",
   };
 
-  const primaryCtaBtn: React.CSSProperties = {
+  const benefitBtn: React.CSSProperties = {
     flex: "1 1 220px",
     padding: "12px 12px",
     borderRadius: 12,
@@ -449,7 +485,7 @@ export default function Page() {
     cursor: "pointer",
     fontWeight: 900,
     letterSpacing: 0.2,
-    color: "#06202a",
+    color: "#052e2b",
     backgroundImage: `linear-gradient(135deg, ${BRAND} 0%, #9be7ff 100%)`,
     boxShadow: "0 12px 28px rgba(90, 200, 250, 0.30)",
   };
@@ -458,19 +494,15 @@ export default function Page() {
 
   return (
     <div style={shell}>
-      {/* Topbar tipo app */}
+      {/* Topbar */}
       <div style={topbar}>
         <div style={topbarRow}>
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 12, opacity: 0.9, fontWeight: 900, letterSpacing: 0.4 }}>
-              SSServicios
-            </div>
+            <div style={{ fontSize: 12, opacity: 0.9, fontWeight: 900, letterSpacing: 0.4 }}>SSServicios</div>
             <div style={{ fontSize: 20, fontWeight: 900, lineHeight: 1.15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               Hola, {me?.name ? me.name : "Cliente"}
             </div>
-            <div style={{ marginTop: 4, fontSize: 12, opacity: 0.9 }}>
-              Resumen de cuenta y servicios
-            </div>
+            <div style={{ marginTop: 4, fontSize: 12, opacity: 0.9 }}>Resumen de cuenta y servicios</div>
           </div>
 
           <div style={badgePill} title="Cliente demo">
@@ -479,7 +511,7 @@ export default function Page() {
           </div>
         </div>
 
-        {/* Banner de alertas (placeholder operativo) */}
+        {/* Banner */}
         <div style={banner}>
           <div style={bannerLeft}>
             <div
@@ -500,15 +532,17 @@ export default function Page() {
             </div>
 
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontWeight: 900, fontSize: 13 }}>
-                Estado operativo
-              </div>
-              <div style={{ fontSize: 12, opacity: 0.9, lineHeight: 1.35 }}>
-                {account?.status === "CORTADO"
-                  ? "Tu servicio figura cortado. Regularizá el estado para reactivar."
-                  : account?.status === "CON_DEUDA"
-                  ? "Tenés saldo pendiente. Revisá la próxima factura para evitar cortes."
-                  : "Sin alertas críticas en este momento (demo)."}
+              <div style={bannerTitle}>Estado operativo</div>
+              <div style={bannerText}>
+                {loadingAccount ? (
+                  "Cargando estado..."
+                ) : account?.status === "CORTADO" ? (
+                  "Tu servicio figura cortado. Regularizá el estado para reactivar."
+                ) : account?.status === "CON_DEUDA" ? (
+                  "Tenés saldo pendiente. Revisá la próxima factura para evitar cortes."
+                ) : (
+                  "Sin alertas críticas en este momento (demo)."
+                )}
               </div>
             </div>
           </div>
@@ -517,28 +551,19 @@ export default function Page() {
             <Link href="/invoices" style={{ textDecoration: "none" }}>
               <Btn>Facturas</Btn>
             </Link>
-            <Link href="/services" style={{ textDecoration: "none" }}>
-              <Btn>Servicios</Btn>
-            </Link>
           </div>
         </div>
       </div>
 
       <div style={container}>
-        {/* Próxima factura / estado */}
+        {/* 1) Próxima factura */}
         <Card style={{ marginTop: 14 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
             <SectionTitle>Próxima factura</SectionTitle>
 
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
-              <Btn
-                onClick={() => loadNextInvoice()}
-                disabled={loadingNextInv}
-                title="Refresca /v1/me/invoices/next"
-              >
-                {loadingNextInv ? "Actualizando..." : "Refresh"}
-              </Btn>
-            </div>
+            <Btn onClick={() => loadNextInvoice()} disabled={loadingNextInv} title="Refresca /v1/me/invoices/next">
+              {loadingNextInv ? "Actualizando..." : "Refresh"}
+            </Btn>
           </div>
 
           {nextInvoice ? (
@@ -607,91 +632,18 @@ export default function Page() {
               </div>
             </div>
           ) : (
-            <div style={{ marginTop: 10, padding: 12, opacity: 0.75 }}>
-              — No hay próxima factura disponible —
-            </div>
+            <div style={{ marginTop: 10, padding: 12, opacity: 0.75 }}>— No hay próxima factura disponible —</div>
           )}
         </Card>
 
-        {/* Accesos rápidos */}
-        <Card>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-            <SectionTitle>Accesos rápidos</SectionTitle>
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
-              <Btn onClick={() => setShowAdmin((v) => !v)} title="Panel técnico (demo)">
-                {showAdmin ? "Ocultar admin" : "Mostrar admin"}
-              </Btn>
-            </div>
-          </div>
-
-          <div style={quickGrid}>
-            <Link href="/invoices" style={{ textDecoration: "none" }}>
-              <div style={quickItem}>
-                <div style={quickIcon}>🧾</div>
-                <div style={quickText}>Facturas</div>
-              </div>
-            </Link>
-
-            <Link href="/services" style={{ textDecoration: "none" }}>
-              <div style={quickItem}>
-                <div style={quickIcon}>🌐</div>
-                <div style={quickText}>Servicios</div>
-              </div>
-            </Link>
-
-            <Link href="/benefits" style={{ textDecoration: "none" }}>
-              <div style={quickItem}>
-                <div style={quickIcon}>🎁</div>
-                <div style={quickText}>Beneficios</div>
-              </div>
-            </Link>
-
-            <div
-              style={quickItem}
-              onClick={openStore}
-              role="button"
-              title="Abre SSStore en una pestaña nueva"
-            >
-              <div style={quickIcon}>🛒</div>
-              <div style={quickText}>SSStore</div>
-            </div>
-
-            <div style={quickItem} title="Próximo: soporte / tickets">
-              <div style={quickIcon}>🛠️</div>
-              <div style={quickText}>Soporte</div>
-            </div>
-
-            <div style={quickItem} title="Próximo: débito automático">
-              <div style={quickIcon}>💳</div>
-              <div style={quickText}>Débito</div>
-            </div>
-
-            <div style={quickItem} title="Próximo: perfil y datos">
-              <div style={quickIcon}>👤</div>
-              <div style={quickText}>Perfil</div>
-            </div>
-
-            <div style={quickItem} title="Más opciones (demo)">
-              <div style={quickIcon}>➕</div>
-              <div style={quickText}>Más</div>
-            </div>
-          </div>
-        </Card>
-
-        {/* Mis servicios (compacto) */}
+        {/* 2) Mis servicios */}
         <Card>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
             <SectionTitle>Mis servicios</SectionTitle>
 
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
-              <Btn onClick={loadServices} disabled={loadingServices} title="Refresca /v1/me/services">
-                {loadingServices ? "Actualizando..." : "Refresh"}
-              </Btn>
-
-              <Link href="/services" style={{ textDecoration: "none" }}>
-                <Btn>Ver todos</Btn>
-              </Link>
-            </div>
+            <Btn onClick={loadServices} disabled={loadingServices} title="Refresca /v1/me/services">
+              {loadingServices ? "Actualizando..." : "Refresh"}
+            </Btn>
           </div>
 
           <div style={{ marginTop: 8, opacity: 0.75 }}>
@@ -737,16 +689,84 @@ export default function Page() {
               ))
             )}
           </div>
+
+          <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <Link href="/services" style={{ textDecoration: "none" }}>
+              <Btn>Ver servicios</Btn>
+            </Link>
+            <Link href="/invoices" style={{ textDecoration: "none" }}>
+              <Btn>Ver facturas</Btn>
+            </Link>
+          </div>
         </Card>
 
-        {/* Beneficio disponible (branding + liviano) */}
+        {/* 3) Accesos rápidos */}
+        <Card>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+            <SectionTitle>Accesos rápidos</SectionTitle>
+            <Btn onClick={() => setShowAdmin((v) => !v)} title="Panel técnico (demo)">
+              {showAdmin ? "Ocultar admin" : "Mostrar admin"}
+            </Btn>
+          </div>
+
+          <div style={quickGrid}>
+            <Link href="/invoices" style={{ textDecoration: "none" }}>
+              <div style={quickItem}>
+                <div style={quickIcon}>🧾</div>
+                <div style={quickText}>Facturas</div>
+              </div>
+            </Link>
+
+            <Link href="/services" style={{ textDecoration: "none" }}>
+              <div style={quickItem}>
+                <div style={quickIcon}>🌐</div>
+                <div style={quickText}>Servicios</div>
+              </div>
+            </Link>
+
+            <Link href="/benefits" style={{ textDecoration: "none" }}>
+              <div style={quickItem}>
+                <div style={quickIcon}>🎁</div>
+                <div style={quickText}>Beneficios</div>
+              </div>
+            </Link>
+
+            <div style={quickItem} onClick={openStore} role="button" title="Abre SSStore en una pestaña nueva">
+              <div style={quickIcon}>🛒</div>
+              <div style={quickText}>SSStore</div>
+            </div>
+
+            <div style={quickItem} title="Próximo: soporte / tickets">
+              <div style={quickIcon}>🛠️</div>
+              <div style={quickText}>Soporte</div>
+            </div>
+
+            <div style={quickItem} title="Próximo: débito automático">
+              <div style={quickIcon}>💳</div>
+              <div style={quickText}>Débito</div>
+            </div>
+
+            <div style={quickItem} title="Próximo: perfil y datos">
+              <div style={quickIcon}>👤</div>
+              <div style={quickText}>Perfil</div>
+            </div>
+
+            <div style={quickItem} title="Más opciones (demo)">
+              <div style={quickIcon}>➕</div>
+              <div style={quickText}>Más</div>
+            </div>
+          </div>
+        </Card>
+
+        {/* 4) Beneficio disponible (tier por escala) */}
         <Card>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
             <SectionTitle>Beneficio disponible</SectionTitle>
 
-            <Btn onClick={loadMe} disabled={loadingMe} title="Refresca /v1/me">
-              {loadingMe ? "Actualizando..." : "Refresh"}
-            </Btn>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 900, fontSize: 12, color: "#0f172a" }}>
+              <span style={{ width: 10, height: 10, borderRadius: 99, background: accent }} />
+              {tier}
+            </div>
           </div>
 
           <div style={{ marginTop: 10, opacity: 0.75 }}>
@@ -756,34 +776,21 @@ export default function Page() {
           <div style={{ marginTop: 12, ...benefitWrap }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
               <div style={{ fontWeight: 900, letterSpacing: -0.2 }}>SSSERVICIOS</div>
-              <div
-                style={{
-                  fontSize: 11,
-                  fontWeight: 900,
-                  padding: "6px 10px",
-                  borderRadius: 999,
-                  border: "1px solid rgba(90, 200, 250, 0.35)",
-                  background: "rgba(90, 200, 250, 0.14)",
-                  whiteSpace: "nowrap",
-                }}
-                title="Beneficio disponible"
-              >
-                {currency}
-              </div>
+              <div style={tierBadge}>{tier}</div>
             </div>
 
-            <div style={{ marginTop: 10, fontSize: 12, opacity: 0.8, fontWeight: 900, letterSpacing: 1.2 }}>
+            <div style={{ marginTop: 10, fontSize: 12, opacity: 0.9, fontWeight: 800, letterSpacing: 1.4 }}>
               DISPONIBLE HOY
             </div>
 
             <div style={benefitAmount}>${fmtMoney(cupo)}</div>
 
-            <div style={{ marginTop: 6, fontSize: 12, opacity: 0.85, fontWeight: 800 }}>
+            <div style={{ marginTop: 6, fontSize: 12, opacity: 0.9, fontWeight: 800 }}>
               {currency} · 3 cuotas sin interés
             </div>
 
             <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-              <button style={primaryCtaBtn} onClick={openStore}>
+              <button style={benefitBtn} onClick={openStore}>
                 🛒 Usar beneficio en SSStore
               </button>
 
@@ -798,8 +805,8 @@ export default function Page() {
               style={{
                 marginTop: 10,
                 fontSize: 12,
-                background: "rgba(255,255,255,0.70)",
-                border: "1px solid rgba(90,200,250,0.18)",
+                background: "rgba(255,255,255,0.14)",
+                border: "1px solid rgba(255,255,255,0.18)",
                 padding: "10px 12px",
                 borderRadius: 12,
                 lineHeight: 1.35,
@@ -810,6 +817,7 @@ export default function Page() {
             </div>
           </div>
 
+          {/* Resumen operativo */}
           <div style={{ marginTop: 12, fontSize: 13, opacity: 0.85 }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
               <span style={{ fontWeight: 900 }}>Cupo oficial</span>
@@ -831,21 +839,13 @@ export default function Page() {
           </div>
 
           {actionError ? (
-            <div
-              style={{
-                marginTop: 12,
-                padding: 12,
-                borderRadius: 12,
-                background: "#fff3f3",
-                border: "1px solid #f1b4b4",
-              }}
-            >
+            <div style={{ marginTop: 12, padding: 12, borderRadius: 12, background: "#fff3f3", border: "1px solid #f1b4b4" }}>
               <b>Error:</b> <span style={{ fontFamily: "monospace" }}>{actionError}</span>
             </div>
           ) : null}
         </Card>
 
-        {/* Admin demo (oculto para presentación) */}
+        {/* Admin demo */}
         {showAdmin ? (
           <Card>
             <SectionTitle>Admin demo (técnico)</SectionTitle>
@@ -895,12 +895,9 @@ export default function Page() {
           </Card>
         ) : null}
 
-        {/* Footer */}
         <div style={{ marginTop: 18, textAlign: "center", fontSize: 12, opacity: 0.65 }}>
           El beneficio se asigna automáticamente según plan, historial de pagos y antigüedad.
-          <div style={{ marginTop: 8, fontWeight: 700, opacity: 0.7 }}>
-            🔒 Sistema seguro de SSServicios (demo)
-          </div>
+          <div style={{ marginTop: 8, fontWeight: 700, opacity: 0.7 }}>🔒 Sistema seguro de SSServicios (demo)</div>
         </div>
       </div>
     </div>
