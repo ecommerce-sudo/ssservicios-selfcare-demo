@@ -458,85 +458,78 @@ export default function Page() {
         accountStatus={account?.status}
       />
 
-      <div style={container}>
-        <div style={{ display: "grid", gap: 14 }}>
-          <NextInvoiceCard
-            nextInvoice={nextInvoice}
-            loadingNextInv={loadingNextInv}
-            onRefresh={loadNextInvoice}
-            invoicePdfUrl={invoicePdfUrl}
-            currencyFallback={currency}
-            accountStatus={account?.status}
-            accountBadgeTone={accountTone(account?.status ?? "neutral")}
-            accountBadgeLabel={account ? accountLabel(account.status) : "ESTADO"}
-            dueBadge={dueBadge}
-            fmtDateISO={fmtDateISO}
-            fmtMoney={fmtMoney}
-            rowCardStyle={rowCard}
-          />
+     <div style={container}>
+  <div style={{ display: "grid", gap: 14 }}>
+    <NextInvoiceCard
+      nextInvoice={nextInvoice}
+      loadingNextInv={loadingNextInv}
+      onRefresh={loadNextInvoice}
+      invoicePdfUrl={invoicePdfUrl}
+      currencyFallback={currency}
+      accountStatus={account?.status}
+      accountBadgeTone={accountTone(account?.status ?? "neutral")}
+      accountBadgeLabel={account ? accountLabel(account.status) : "ESTADO"}
+      dueBadge={dueBadge}
+      fmtDateISO={fmtDateISO}
+      fmtMoney={fmtMoney}
+      rowCardStyle={rowCard}
+    />
 
-          <ServicesCard
-            servicesTop3={servicesTop3}
-            loadingServices={loadingServices}
-            onRefresh={loadServices}
-            serviceLabel={serviceLabel}
-            statusLabel={statusLabel}
-            statusTone={statusTone}
-            rowCardStyle={rowCard}
-          />
+    <QuickActionsCard
+      showAdmin={showAdmin}
+      onToggleAdmin={() => setShowAdmin((v) => !v)}
+      openStore={openStore}
+    />
 
-          <QuickActionsCard
-            showAdmin={showAdmin}
-            onToggleAdmin={() => setShowAdmin((v) => !v)}
-            openStore={openStore}
-            quickGridStyle={quickGrid}
-            quickItemStyle={quickItem}
-            quickIconStyle={quickIcon}
-            quickTextStyle={quickText}
-          />
+    <ServicesCard
+      servicesTop3={servicesTop3}
+      loadingServices={loadingServices}
+      onRefresh={loadServices}
+      serviceLabel={serviceLabel}
+      statusLabel={statusLabel}
+      statusTone={statusTone}
+      rowCardStyle={rowCard}
+    />
 
-          <BenefitCard
-            tier={tier}
-            accent={accent}
-            currency={currency}
-            cupo={cupo}
-            me={
-              me
-                ? {
-                    purchaseAvailableOfficial: me.purchaseAvailableOfficial,
-                    purchaseAvailableReserved: me.purchaseAvailableReserved,
-                    purchaseAvailable: me.purchaseAvailable,
-                  }
-                : null
+    <BenefitCard
+      tier={tier}
+      accent={accent}
+      currency={currency}
+      cupo={cupo}
+      me={
+        me
+          ? {
+              purchaseAvailableOfficial: me.purchaseAvailableOfficial,
+              purchaseAvailableReserved: me.purchaseAvailableReserved,
+              purchaseAvailable: me.purchaseAvailable,
             }
-            brand={BRAND}
-            apiBase={API_BASE}
-            benefitWrapStyle={benefitWrap}
-            tierBadgeStyle={tierBadge}
-            benefitAmountStyle={benefitAmount}
-            benefitBtnStyle={benefitBtn}
-            fmtMoney={fmtMoney}
-            openStore={openStore}
-            actionError={actionError}
-          />
+          : null
+      }
+      brand={BRAND}
+      apiBase={API_BASE}
+      benefitWrapStyle={benefitWrap}
+      tierBadgeStyle={tierBadge}
+      benefitAmountStyle={benefitAmount}
+      benefitBtnStyle={benefitBtn}
+      fmtMoney={fmtMoney}
+      openStore={openStore}
+      actionError={actionError}
+    />
 
-          {showAdmin ? (
-            <AdminPanel
-              amount={amount}
-              desc={desc}
-              setAmount={setAmount}
-              setDesc={setDesc}
-              actionLoading={actionLoading}
-              runPurchase={runPurchase}
-              runReconcile={runReconcile}
-              actionResult={actionResult}
-              inputStyle={inputStyle}
-            />
-          ) : null}
+    {showAdmin ? (
+      <AdminPanel
+        amount={amount}
+        desc={desc}
+        setAmount={setAmount}
+        setDesc={setDesc}
+        actionLoading={actionLoading}
+        runPurchase={runPurchase}
+        runReconcile={runReconcile}
+        actionResult={actionResult}
+        inputStyle={inputStyle}
+      />
+    ) : null}
 
-          <HomeFooter />
-        </div>
-      </div>
-    </div>
-  );
-}
+    <HomeFooter />
+  </div>
+</div>
