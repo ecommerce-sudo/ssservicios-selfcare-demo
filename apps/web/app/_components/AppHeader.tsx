@@ -32,7 +32,7 @@ export default function AppHeader({ brand, meName, clientId, loadingAccount, acc
   const headerWrap: React.CSSProperties = {
     position: "sticky",
     top: 0,
-    zIndex: 50,
+    zIndex: 10,
     background: "rgba(255,255,255,0.86)",
     backdropFilter: "blur(12px)",
     WebkitBackdropFilter: "blur(12px)",
