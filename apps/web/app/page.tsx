@@ -6,6 +6,8 @@ import { Btn, Card, Pill, SectionTitle } from "./ui";
 import AppHeader from "./_components/AppHeader";
 import NextInvoiceCard from "./_components/NextInvoiceCard";
 import ServicesCard from "./_components/ServicesCard";
+import QuickActionsCard from "./_components/QuickActionsCard";
+
 
 
 type MeResponse = {
@@ -489,62 +491,16 @@ export default function Page() {
 
 
         {/* 3) Accesos rápidos */}
-        <Card>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-            <SectionTitle>Accesos rápidos</SectionTitle>
-            <Btn onClick={() => setShowAdmin((v) => !v)} title="Panel técnico (demo)">
-              {showAdmin ? "Ocultar admin" : "Mostrar admin"}
-            </Btn>
-          </div>
+        <QuickActionsCard
+           showAdmin={showAdmin}
+           onToggleAdmin={() => setShowAdmin((v) => !v)}
+           openStore={openStore}
+           quickGridStyle={quickGrid}
+           quickItemStyle={quickItem}
+           quickIconStyle={quickIcon}
+           quickTextStyle={quickText}
+         />
 
-          <div style={quickGrid}>
-            <Link href="/invoices" style={{ textDecoration: "none" }}>
-              <div style={quickItem}>
-                <div style={quickIcon}>🧾</div>
-                <div style={quickText}>Facturas</div>
-              </div>
-            </Link>
-
-            <Link href="/services" style={{ textDecoration: "none" }}>
-              <div style={quickItem}>
-                <div style={quickIcon}>🌐</div>
-                <div style={quickText}>Servicios</div>
-              </div>
-            </Link>
-
-            <Link href="/benefits" style={{ textDecoration: "none" }}>
-              <div style={quickItem}>
-                <div style={quickIcon}>🎁</div>
-                <div style={quickText}>Beneficios</div>
-              </div>
-            </Link>
-
-            <div style={quickItem} onClick={openStore} role="button" title="Abre SSStore en una pestaña nueva">
-              <div style={quickIcon}>🛒</div>
-              <div style={quickText}>SSStore</div>
-            </div>
-
-            <div style={quickItem} title="Próximo: soporte / tickets">
-              <div style={quickIcon}>🛠️</div>
-              <div style={quickText}>Soporte</div>
-            </div>
-
-            <div style={quickItem} title="Próximo: débito automático">
-              <div style={quickIcon}>💳</div>
-              <div style={quickText}>Débito</div>
-            </div>
-
-            <div style={quickItem} title="Próximo: perfil y datos">
-              <div style={quickIcon}>👤</div>
-              <div style={quickText}>Perfil</div>
-            </div>
-
-            <div style={quickItem} title="Más opciones (demo)">
-              <div style={quickIcon}>➕</div>
-              <div style={quickText}>Más</div>
-            </div>
-          </div>
-        </Card>
 
         {/* 4) Beneficio disponible (tier por escala) */}
         <Card>
