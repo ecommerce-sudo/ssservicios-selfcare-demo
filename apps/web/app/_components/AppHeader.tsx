@@ -2,132 +2,215 @@
 
 import Link from "next/link";
 import React from "react";
-import { Btn, Card, SectionTitle } from "../ui";
+import { Btn } from "../ui";
 
 type Props = {
-  showAdmin: boolean;
-  onToggleAdmin: () => void;
-  openStore: () => void;
+  brand?: string; // ✅ opcional para evitar romper builds
+  meName?: string | null;
+  clientId?: number | null;
+  loadingAccount: boolean;
+  accountStatus?: string | null;
 };
 
-function MSIcon({ name, filled }: { name: string; filled?: boolean }) {
-  return (
-    <span
-      className="material-symbols-outlined"
-      aria-hidden
-      style={{
-        fontVariationSettings: `'FILL' ${filled ? 1 : 0}, 'wght' 600, 'GRAD' 0, 'opsz' 24`,
-        fontSize: 26,
-        lineHeight: 1,
-        color: "#7b00ff",
-      }}
-    >
-      {name}
-    </span>
-  );
+function bannerMessage(loadingAccount: boolean, status?: string | null) {
+  if (loadingAccount) return "Cargando estado...";
+  if (status === "CORTADO") return "Tu servicio figura cortado. Regularizá el estado para reactivar.";
+  if (status === "CON_DEUDA") return "Tenés saldo pendiente. Revisá la próxima factura para evitar cortes.";
+  return "Sin alertas críticas en este momento (demo).";
 }
 
-function Item({
-  label,
-  icon,
-  href,
-  onClick,
-  title,
-}: {
-  label: string;
-  icon: React.ReactNode;
-  href?: string;
-  onClick?: () => void;
-  title?: string;
-}) {
-  const content = (
-    <div
-      title={title}
-      onClick={onClick}
-      role={onClick ? "button" : undefined}
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        textAlign: "center",
-        gap: 10,
-        padding: "14px 10px",
-        borderRadius: 16,
-        border: "1px solid rgba(123,0,255,0.10)",
-        background: "#fff",
-        boxShadow: "0 10px 24px rgba(0,0,0,0.06)",
-        cursor: onClick ? "pointer" : "default",
-        userSelect: "none",
-        width: "100%",
-        minWidth: 0,
-      }}
-    >
-      {/* ✅ icono SUELTO (sin círculo) */}
-      <div aria-hidden style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
-        {icon}
-      </div>
-
-      <div
-        style={{
-          fontSize: 12,
-          fontWeight: 900,
-          color: "#0f172a",
-          opacity: 0.9,
-          lineHeight: 1.15,
-          width: "100%",
-          minWidth: 0,
-        }}
-      >
-        {label}
-      </div>
-    </div>
-  );
-
-  if (href) {
-    return (
-      <Link href={href} style={{ textDecoration: "none", display: "block", width: "100%", minWidth: 0 }}>
-        {content}
-      </Link>
-    );
-  }
-  return content;
+function initials(name?: string | null) {
+  const n = (name || "Cliente").trim();
+  const parts = n.split(/\s+/).filter(Boolean);
+  const a = (parts[0]?.[0] || "C").toUpperCase();
+  const b = (parts[1]?.[0] || "").toUpperCase();
+  return (a + b).slice(0, 2);
 }
 
-export default function QuickActionsCard({ showAdmin, onToggleAdmin, openStore }: Props) {
-  const gridStyle: React.CSSProperties = {
-    marginTop: 12,
-    display: "grid",
-    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-    gap: 10,
-    width: "100%",
-    minWidth: 0,
+export default function AppHeader({
+  brand,
+  meName,
+  clientId,
+  loadingAccount,
+  accountStatus,
+}: Props) {
+  const BRAND = brand || "#7b00ff"; // ✅ fallback seguro
+
+  const headerWrap: React.CSSProperties = {
+    position: "sticky",
+    top: 0,
+    zIndex: 10,
+    background: "rgba(255,255,255,0.86)",
+    backdropFilter: "blur(12px)",
+    WebkitBackdropFilter: "blur(12px)",
+    borderBottom: "1px solid rgba(15, 23, 42, 0.06)",
+  };
+
+  const headerRow: React.CSSProperties = {
+    maxWidth: 720,
+    margin: "0 auto",
+    padding: "14px 16px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  };
+
+  const avatar: React.CSSProperties = {
+    width: 44,
+    height: 44,
+    borderRadius: 999,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: 900,
+    color: BRAND,
+    background: "rgba(123,0,255,0.10)",
+    border: `2px solid ${BRAND}`,
+    boxShadow: "0 10px 24px rgba(0,0,0,0.08)",
+    flex: "0 0 auto",
+  };
+
+  const bellBtn: React.CSSProperties = {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    border: "1px solid rgba(15, 23, 42, 0.08)",
+    background: "#fff",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    cursor: "pointer",
+    position: "relative",
+    boxShadow: "0 10px 24px rgba(0,0,0,0.06)",
+  };
+
+  const bellBadge: React.CSSProperties = {
+    position: "absolute",
+    top: 9,
+    right: 10,
+    width: 8,
+    height: 8,
+    borderRadius: 99,
+    background: "#ef4444",
+    border: "2px solid #fff",
+  };
+
+  const idPill: React.CSSProperties = {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 8,
+    padding: "8px 10px",
+    borderRadius: 999,
+    border: "1px solid rgba(15, 23, 42, 0.08)",
+    background: "#fff",
+    fontWeight: 900,
+    fontSize: 12,
+    color: "rgba(15,23,42,0.80)",
+    whiteSpace: "nowrap",
+  };
+
+  const bannerOuter: React.CSSProperties = {
+    maxWidth: 720,
+    margin: "10px auto 0",
+    padding: "0 16px 12px",
+  };
+
+  const banner: React.CSSProperties = {
+    padding: "14px 14px",
+    borderRadius: 18,
+    background: "rgba(255, 245, 200, 0.55)",
+    border: "1px solid rgba(245, 158, 11, 0.25)",
+    display: "flex",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12,
   };
 
   return (
-    <Card>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, minWidth: 0 }}>
-        <SectionTitle>Accesos rápidos</SectionTitle>
-        <Btn onClick={onToggleAdmin} title="Panel técnico (demo)">
-          {showAdmin ? "Ocultar admin" : "Mostrar admin"}
-        </Btn>
+    <div>
+      <div style={headerWrap}>
+        <div style={headerRow}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+            <div style={avatar} aria-label="Avatar">
+              {initials(meName)}
+            </div>
+
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 12, color: "rgba(15,23,42,0.55)", fontWeight: 700, lineHeight: 1.1 }}>
+                Hola,
+              </div>
+              <div
+                style={{
+                  fontSize: 18,
+                  fontWeight: 900,
+                  color: "#0f172a",
+                  lineHeight: 1.15,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {meName ? meName : "Cliente"}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <button style={bellBtn} title="Notificaciones (demo)" aria-label="Notificaciones">
+              <span className="material-symbols-outlined" style={{ fontSize: 22, color: "rgba(15,23,42,0.78)" }}>
+                notifications
+              </span>
+              <span style={bellBadge} />
+            </button>
+
+            <div style={idPill} title="Cliente demo">
+              <span style={{ width: 8, height: 8, borderRadius: 99, background: BRAND }} />
+              ID {clientId ?? "—"}
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div style={gridStyle}>
-        <Item label="Facturas" icon={<MSIcon name="receipt_long" filled />} href="/invoices" />
-        <Item label="Servicios" icon={<MSIcon name="lan" />} href="/services" />
-        <Item label="Beneficios" icon={<MSIcon name="workspace_premium" filled />} href="/benefits" />
-        <Item
-          label="SSStore"
-          icon={<MSIcon name="shopping_bag" />}
-          onClick={openStore}
-          title="Abre SSStore en una pestaña nueva"
-        />
-        <Item label="Soporte" icon={<MSIcon name="support_agent" />} title="Próximo: soporte / tickets" />
-        <Item label="Débito" icon={<MSIcon name="credit_card" />} title="Próximo: débito automático" />
-        <Item label="Perfil" icon={<MSIcon name="person" />} title="Próximo: perfil y datos" />
-        <Item label="Más" icon={<MSIcon name="add_circle" />} title="Más opciones (demo)" />
+      <div style={bannerOuter}>
+        <div style={banner}>
+          <div style={{ display: "flex", gap: 12, alignItems: "flex-start", minWidth: 0 }}>
+            <div
+              aria-hidden
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 14,
+                background: "rgba(245, 158, 11, 0.18)",
+                border: "1px solid rgba(245, 158, 11, 0.28)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontWeight: 900,
+                flex: "0 0 auto",
+              }}
+            >
+              ⚠️
+            </div>
+
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: 900, fontSize: 15, color: "#7c2d12" }}>
+                Estado operativo:{" "}
+                {accountStatus === "CON_DEUDA" ? "Pendiente" : accountStatus === "CORTADO" ? "Cortado" : "OK"}
+              </div>
+              <div style={{ fontSize: 13, color: "rgba(124, 45, 18, 0.85)", lineHeight: 1.35, marginTop: 4 }}>
+                {bannerMessage(loadingAccount, accountStatus)}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end" }}>
+            <Link href="/invoices" style={{ textDecoration: "none" }}>
+              <Btn>Ir a Facturas</Btn>
+            </Link>
+          </div>
+        </div>
       </div>
-    </Card>
+    </div>
   );
 }
