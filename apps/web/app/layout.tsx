@@ -4,6 +4,13 @@ import AppShell from "./_components/AppShell";
 export const metadata = {
   title: "SSServicios Selfcare Demo",
   description: "Demo de autoservicio: cupo, reservas y órdenes",
+  manifest: "/manifest.webmanifest",
+  themeColor: "#7b00ff",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "SSServicios",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
