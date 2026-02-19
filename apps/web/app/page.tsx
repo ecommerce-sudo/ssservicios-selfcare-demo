@@ -12,7 +12,6 @@ import BenefitCard from "./_components/BenefitCard";
 import AdminPanel from "./_components/AdminPanel";
 import HomeFooter from "./_components/HomeFooter";
 
-
 type MeResponse = {
   clientId: number;
   name: string;
@@ -95,7 +94,7 @@ function getTier(cupo: number): { tier: Tier; accent: string; bg: string } {
     tier: "BLACK",
     accent: "#111827",
     bg: "linear-gradient(135deg, #232526 0%, #414345 100%)",
-  };
+    };
 }
 
 function fmtMoney(n: number) {
@@ -460,82 +459,83 @@ export default function Page() {
       />
 
       <div style={container}>
-        <NextInvoiceCard
-          nextInvoice={nextInvoice}
-          loadingNextInv={loadingNextInv}
-          onRefresh={loadNextInvoice}
-          invoicePdfUrl={invoicePdfUrl}
-          currencyFallback={currency}
-          accountStatus={account?.status}
-          accountBadgeTone={accountTone(account?.status ?? "neutral")}
-          accountBadgeLabel={account ? accountLabel(account.status) : "ESTADO"}
-          dueBadge={dueBadge}
-          fmtDateISO={fmtDateISO}
-          fmtMoney={fmtMoney}
-          rowCardStyle={rowCard}
-        />
-
-        <ServicesCard
-          servicesTop3={servicesTop3}
-          loadingServices={loadingServices}
-          onRefresh={loadServices}
-          serviceLabel={serviceLabel}
-          statusLabel={statusLabel}
-          statusTone={statusTone}
-          rowCardStyle={rowCard}
-        />
-
-        <QuickActionsCard
-          showAdmin={showAdmin}
-          onToggleAdmin={() => setShowAdmin((v) => !v)}
-          openStore={openStore}
-          quickGridStyle={quickGrid}
-          quickItemStyle={quickItem}
-          quickIconStyle={quickIcon}
-          quickTextStyle={quickText}
-        />
-
-        <BenefitCard
-          tier={tier}
-          accent={accent}
-          currency={currency}
-          cupo={cupo}
-          me={
-            me
-              ? {
-                  purchaseAvailableOfficial: me.purchaseAvailableOfficial,
-                  purchaseAvailableReserved: me.purchaseAvailableReserved,
-                  purchaseAvailable: me.purchaseAvailable,
-                }
-              : null
-          }
-          brand={BRAND}
-          apiBase={API_BASE}
-          benefitWrapStyle={benefitWrap}
-          tierBadgeStyle={tierBadge}
-          benefitAmountStyle={benefitAmount}
-          benefitBtnStyle={benefitBtn}
-          fmtMoney={fmtMoney}
-          openStore={openStore}
-          actionError={actionError}
-        />
-
-        {showAdmin ? (
-          <AdminPanel
-            amount={amount}
-            desc={desc}
-            setAmount={setAmount}
-            setDesc={setDesc}
-            actionLoading={actionLoading}
-            runPurchase={runPurchase}
-            runReconcile={runReconcile}
-            actionResult={actionResult}
-            inputStyle={inputStyle}
+        <div style={{ display: "grid", gap: 14 }}>
+          <NextInvoiceCard
+            nextInvoice={nextInvoice}
+            loadingNextInv={loadingNextInv}
+            onRefresh={loadNextInvoice}
+            invoicePdfUrl={invoicePdfUrl}
+            currencyFallback={currency}
+            accountStatus={account?.status}
+            accountBadgeTone={accountTone(account?.status ?? "neutral")}
+            accountBadgeLabel={account ? accountLabel(account.status) : "ESTADO"}
+            dueBadge={dueBadge}
+            fmtDateISO={fmtDateISO}
+            fmtMoney={fmtMoney}
+            rowCardStyle={rowCard}
           />
-        ) : null}
 
-       <HomeFooter />
+          <ServicesCard
+            servicesTop3={servicesTop3}
+            loadingServices={loadingServices}
+            onRefresh={loadServices}
+            serviceLabel={serviceLabel}
+            statusLabel={statusLabel}
+            statusTone={statusTone}
+            rowCardStyle={rowCard}
+          />
 
+          <QuickActionsCard
+            showAdmin={showAdmin}
+            onToggleAdmin={() => setShowAdmin((v) => !v)}
+            openStore={openStore}
+            quickGridStyle={quickGrid}
+            quickItemStyle={quickItem}
+            quickIconStyle={quickIcon}
+            quickTextStyle={quickText}
+          />
+
+          <BenefitCard
+            tier={tier}
+            accent={accent}
+            currency={currency}
+            cupo={cupo}
+            me={
+              me
+                ? {
+                    purchaseAvailableOfficial: me.purchaseAvailableOfficial,
+                    purchaseAvailableReserved: me.purchaseAvailableReserved,
+                    purchaseAvailable: me.purchaseAvailable,
+                  }
+                : null
+            }
+            brand={BRAND}
+            apiBase={API_BASE}
+            benefitWrapStyle={benefitWrap}
+            tierBadgeStyle={tierBadge}
+            benefitAmountStyle={benefitAmount}
+            benefitBtnStyle={benefitBtn}
+            fmtMoney={fmtMoney}
+            openStore={openStore}
+            actionError={actionError}
+          />
+
+          {showAdmin ? (
+            <AdminPanel
+              amount={amount}
+              desc={desc}
+              setAmount={setAmount}
+              setDesc={setDesc}
+              actionLoading={actionLoading}
+              runPurchase={runPurchase}
+              runReconcile={runReconcile}
+              actionResult={actionResult}
+              inputStyle={inputStyle}
+            />
+          ) : null}
+
+          <HomeFooter />
+        </div>
       </div>
     </div>
   );
