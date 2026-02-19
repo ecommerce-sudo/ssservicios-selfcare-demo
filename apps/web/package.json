@@ -10,11 +10,10 @@
     "lint": "next lint"
   },
   "dependencies": {
-  "next": "...",
-  "react": "...",
-  "react-dom": "...",
-  "next-pwa": "^5.6.0"
-}
+    "next": "...",
+    "react": "...",
+    "react-dom": "...",
+    "next-pwa": "^5.6.0"
   },
   "devDependencies": {
     "@types/node": "20.11.30",
