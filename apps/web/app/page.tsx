@@ -3,6 +3,7 @@
 import Link from "next/link";
 import React, { useEffect, useMemo, useState } from "react";
 import { Btn, Card, Pill, SectionTitle } from "./ui";
+import AppHeader from "./_components/AppHeader";
 
 type MeResponse = {
   clientId: number;
@@ -63,7 +64,8 @@ type AccountResponse = {
 const DEFAULT_API_BASE = "https://ssservicios-selfcare-demo.onrender.com";
 const DEFAULT_STORE_URL = "https://ssstore.com.ar";
 
-const BRAND = "#5ac8fa";
+// ✅ violeta (capturas). Después lo tokenizamos, por ahora simple.
+const BRAND = "#7b00ff";
 
 type Tier = "INFINIUM" | "CLASSIC" | "BLACK";
 function getTier(cupo: number): { tier: Tier; accent: string; bg: string } {
@@ -345,52 +347,6 @@ export default function Page() {
     padding: "0 16px 0",
   };
 
-  const topbar: React.CSSProperties = {
-    background: `linear-gradient(135deg, ${BRAND} 0%, #2aa8db 100%)`,
-    color: "white",
-    padding: "16px 16px 14px",
-    borderBottomLeftRadius: 18,
-    borderBottomRightRadius: 18,
-    boxShadow: "0 10px 30px rgba(0,0,0,0.12)",
-  };
-
-  const topbarRow: React.CSSProperties = {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 12,
-  };
-
-  const badgePill: React.CSSProperties = {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 8,
-    padding: "6px 10px",
-    borderRadius: 999,
-    background: "rgba(255,255,255,0.16)",
-    border: "1px solid rgba(255,255,255,0.22)",
-    fontWeight: 900,
-    fontSize: 12,
-    whiteSpace: "nowrap",
-  };
-
-  // ✅ Banner con texto oscuro para legibilidad
-  const banner: React.CSSProperties = {
-    marginTop: 12,
-    padding: "12px 12px",
-    borderRadius: 14,
-    background: "rgba(255, 255, 255, 0.96)",
-    border: "1px solid #e6eef5",
-    display: "flex",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: 12,
-  };
-
-  const bannerLeft: React.CSSProperties = { display: "flex", gap: 10, alignItems: "flex-start" };
-  const bannerTitle: React.CSSProperties = { fontWeight: 900, fontSize: 13, color: "#0f172a" };
-  const bannerText: React.CSSProperties = { fontSize: 12, color: "#334155", lineHeight: 1.35 };
-
   const rowCard: React.CSSProperties = {
     padding: "12px 12px",
     borderRadius: 16,
@@ -442,7 +398,6 @@ export default function Page() {
     width: "100%",
   };
 
-  // Benefit: vuelve el “tier” por escala con tu bg, pero mantenemos el look cuidado
   const benefitWrap: React.CSSProperties = {
     borderRadius: 16,
     padding: 14,
@@ -486,74 +441,21 @@ export default function Page() {
     fontWeight: 900,
     letterSpacing: 0.2,
     color: "#052e2b",
-    backgroundImage: `linear-gradient(135deg, ${BRAND} 0%, #9be7ff 100%)`,
-    boxShadow: "0 12px 28px rgba(90, 200, 250, 0.30)",
+    backgroundImage: `linear-gradient(135deg, ${BRAND} 0%, #c4a2ff 100%)`,
+    boxShadow: "0 12px 28px rgba(123, 0, 255, 0.30)",
   };
 
   const servicesTop3 = services.slice(0, 3);
 
   return (
     <div style={shell}>
-      {/* Topbar */}
-      <div style={topbar}>
-        <div style={topbarRow}>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 12, opacity: 0.9, fontWeight: 900, letterSpacing: 0.4 }}>SSServicios</div>
-            <div style={{ fontSize: 20, fontWeight: 900, lineHeight: 1.15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              Hola, {me?.name ? me.name : "Cliente"}
-            </div>
-            <div style={{ marginTop: 4, fontSize: 12, opacity: 0.9 }}>Resumen de cuenta y servicios</div>
-          </div>
-
-          <div style={badgePill} title="Cliente demo">
-            <span style={{ width: 10, height: 10, borderRadius: 99, background: "rgba(255,255,255,0.85)" }} />
-            ID {me?.clientId ?? "—"}
-          </div>
-        </div>
-
-        {/* Banner */}
-        <div style={banner}>
-          <div style={bannerLeft}>
-            <div
-              aria-hidden
-              style={{
-                width: 34,
-                height: 34,
-                borderRadius: 12,
-                background: "rgba(255, 196, 0, 0.18)",
-                border: "1px solid rgba(255, 196, 0, 0.28)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontWeight: 900,
-              }}
-            >
-              ⚠️
-            </div>
-
-            <div style={{ minWidth: 0 }}>
-              <div style={bannerTitle}>Estado operativo</div>
-              <div style={bannerText}>
-                {loadingAccount ? (
-                  "Cargando estado..."
-                ) : account?.status === "CORTADO" ? (
-                  "Tu servicio figura cortado. Regularizá el estado para reactivar."
-                ) : account?.status === "CON_DEUDA" ? (
-                  "Tenés saldo pendiente. Revisá la próxima factura para evitar cortes."
-                ) : (
-                  "Sin alertas críticas en este momento (demo)."
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end" }}>
-            <Link href="/invoices" style={{ textDecoration: "none" }}>
-              <Btn>Facturas</Btn>
-            </Link>
-          </div>
-        </div>
-      </div>
+      <AppHeader
+        brand={BRAND}
+        meName={me?.name}
+        clientId={me?.clientId}
+        loadingAccount={loadingAccount}
+        accountStatus={account?.status}
+      />
 
       <div style={container}>
         {/* 1) Próxima factura */}
@@ -675,7 +577,15 @@ export default function Page() {
                     </div>
 
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 900, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      <div
+                        style={{
+                          fontWeight: 900,
+                          fontSize: 14,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
                         {s.name}
                       </div>
                       <div style={{ marginTop: 4, fontSize: 12, opacity: 0.75, fontWeight: 800 }}>
@@ -763,7 +673,16 @@ export default function Page() {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
             <SectionTitle>Beneficio disponible</SectionTitle>
 
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 900, fontSize: 12, color: "#0f172a" }}>
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                fontWeight: 900,
+                fontSize: 12,
+                color: "#0f172a",
+              }}
+            >
               <span style={{ width: 10, height: 10, borderRadius: 99, background: accent }} />
               {tier}
             </div>
@@ -812,12 +731,10 @@ export default function Page() {
                 lineHeight: 1.35,
               }}
             >
-              ℹ️ En checkout elegí <b>"Financiación en Factura SSServicios"</b> e ingresá tu{" "}
-              <b>número de cliente</b>.
+              ℹ️ En checkout elegí <b>"Financiación en Factura SSServicios"</b> e ingresá tu <b>número de cliente</b>.
             </div>
           </div>
 
-          {/* Resumen operativo */}
           <div style={{ marginTop: 12, fontSize: 13, opacity: 0.85 }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
               <span style={{ fontWeight: 900 }}>Cupo oficial</span>
