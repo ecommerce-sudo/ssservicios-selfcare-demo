@@ -5,6 +5,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Btn, Card, Pill, SectionTitle } from "./ui";
 import AppHeader from "./_components/AppHeader";
 import NextInvoiceCard from "./_components/NextInvoiceCard";
+import ServicesCard from "./_components/ServicesCard";
+
 
 type MeResponse = {
   clientId: number;
@@ -475,76 +477,16 @@ export default function Page() {
         />
 
         {/* 2) Mis servicios */}
-        <Card>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-            <SectionTitle>Mis servicios</SectionTitle>
+         <ServicesCard
+           servicesTop3={servicesTop3}
+           loadingServices={loadingServices}
+           onRefresh={loadServices}
+           serviceLabel={serviceLabel}
+           statusLabel={statusLabel}
+           statusTone={statusTone}
+           rowCardStyle={rowCard}
+         />
 
-            <Btn onClick={loadServices} disabled={loadingServices} title="Refresca /v1/me/services">
-              {loadingServices ? "Actualizando..." : "Refresh"}
-            </Btn>
-          </div>
-
-          <div style={{ marginTop: 8, opacity: 0.75 }}>
-            Resumen rápido (top 3). El detalle completo está en “Servicios”.
-          </div>
-
-          <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
-            {servicesTop3.length === 0 ? (
-              <div style={{ padding: 12, opacity: 0.75 }}>— No hay servicios para mostrar —</div>
-            ) : (
-              servicesTop3.map((s) => (
-                <div key={s.id} style={rowCard}>
-                  <div style={{ display: "flex", gap: 12, alignItems: "flex-start", minWidth: 0 }}>
-                    <div
-                      aria-hidden
-                      style={{
-                        width: 34,
-                        height: 34,
-                        borderRadius: 12,
-                        background: "rgba(90, 200, 250, 0.16)",
-                        border: "1px solid rgba(90, 200, 250, 0.28)",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        fontWeight: 900,
-                      }}
-                    >
-                      {s.type === "INTERNET" ? "🌐" : s.type === "MOBILE" ? "📱" : "🔧"}
-                    </div>
-
-                    <div style={{ minWidth: 0 }}>
-                      <div
-                        style={{
-                          fontWeight: 900,
-                          fontSize: 14,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {s.name}
-                      </div>
-                      <div style={{ marginTop: 4, fontSize: 12, opacity: 0.75, fontWeight: 800 }}>
-                        {serviceLabel(s.type)} {s.extra ? `· ${s.extra}` : ""}
-                      </div>
-                    </div>
-                  </div>
-
-                  <Pill tone={statusTone(s.status)}>{statusLabel(s.status)}</Pill>
-                </div>
-              ))
-            )}
-          </div>
-
-          <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <Link href="/services" style={{ textDecoration: "none" }}>
-              <Btn>Ver servicios</Btn>
-            </Link>
-            <Link href="/invoices" style={{ textDecoration: "none" }}>
-              <Btn>Ver facturas</Btn>
-            </Link>
-          </div>
-        </Card>
 
         {/* 3) Accesos rápidos */}
         <Card>
