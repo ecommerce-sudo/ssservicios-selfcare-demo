@@ -26,9 +26,6 @@ import {
 } from "./reservations.js";
 import { createAriaAdditionalStrict } from "./adicional.js";
 
-// ✅ servicios contratados (demo)
-import { listServicesByClient } from "./services.js";
-
 dotenv.config();
 
 // Demo auth: por ahora fijamos clientId=66489.
@@ -72,6 +69,35 @@ function escapeHtml(input: any): string {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+/**
+ * ✅ REAL: Conexiones Internet del cliente (Anatod)
+ * Endpoint observado: /cliente/{id}/conexiones/internet
+ * Devuelve paginado, usamos raw.data
+ */
+async function anatodListConexionesInternetByCliente(anatodClientId: number | string) {
+  const base = process.env.ANATOD_BASE_URL; // ej: https://api.anatod.ar/api
+  const apiKey = process.env.ANATOD_API_KEY;
+
+  if (!base) throw new Error("Missing env ANATOD_BASE_URL");
+  if (!apiKey) throw new Error("Missing env ANATOD_API_KEY");
+
+  const url = `${base}/cliente/${encodeURIComponent(String(anatodClientId))}/conexiones/internet`;
+
+  const res = await fetch(url, {
+    method: "GET",
+    headers: { accept: "application/json", "x-api-key": apiKey },
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `ANATOD_CONEXIONES_INTERNET_FAILED status=${res.status} body=${text.slice(0, 300)}`
+    );
+  }
+
+  return (await res.json()) as any; // { current_page, data: [...], ... }
 }
 
 /**
@@ -186,20 +212,49 @@ app.get("/v1/me", async (_req, res) => {
   }
 });
 
-// ---------- Servicios ----------
+// ---------- Servicios (REAL: solo Internet por ahora) ----------
 app.get("/v1/me/services", async (_req, res) => {
   try {
-    const services = await listServicesByClient(Number(DEMO_CLIENT_ID));
+    // 1) Cliente real (para obtener anatodClientId)
+    const me = await anatodGetClienteById(DEMO_CLIENT_ID);
+    const anatodClientId = Number(me.clienteId);
+
+    // 2) Conexiones internet reales
+    const raw = await anatodListConexionesInternetByCliente(anatodClientId);
+    const list = Array.isArray(raw?.data) ? raw.data : [];
+
+    // 3) Activo: conexion_cortado === "N"
+    const active = list.filter(
+      (x: any) => String(x?.conexion_cortado ?? "").toUpperCase() === "N"
+    );
+
+    // 4) DTO simple para la app (podemos enriquecer con "plan nombre" después)
+    const services = active.map((c: any) => ({
+      id: String(c.conexion_id),
+      type: "INTERNET",
+      name: `Internet Hogar (Plan ${c.conexion_plan})`,
+      status: "ACTIVE",
+      extra: c.conexion_domicilio ? String(c.conexion_domicilio) : "",
+      conexionId: Number(c.conexion_id),
+      planId: Number(c.conexion_plan),
+    }));
+
     res.json({
       clientId: Number(DEMO_CLIENT_ID),
+      anatodClientId,
       services,
-      source: "demo:services",
+      source: "anatod:/cliente/{id}/conexiones/internet",
+      meta: {
+        total: Number(raw?.total ?? services.length),
+        per_page: Number(raw?.per_page ?? 0) || undefined,
+        current_page: Number(raw?.current_page ?? 1),
+      },
     });
   } catch (err: any) {
     console.error(err);
-    res.status(500).json({
+    res.status(502).json({
       ok: false,
-      error: "SERVICES_ERROR",
+      error: "ANATOD_SERVICES_ERROR",
       detail: String(err?.message ?? err),
     });
   }
@@ -324,7 +379,9 @@ app.get("/v1/me/invoices/:facturaId/print", async (req, res) => {
     const rawList = await anatodListFacturasByCliente(anatodClientId);
     const list = Array.isArray((rawList as any)?.data) ? (rawList as any).data : [];
 
-    const found = list.find((f: any) => String(f?.factura_id ?? f?.id ?? f?.facturaId) === facturaId);
+    const found = list.find(
+      (f: any) => String(f?.factura_id ?? f?.id ?? f?.facturaId) === facturaId
+    );
     if (!found) {
       return res.status(404).json({ ok: false, error: "INVOICE_NOT_FOUND_FOR_CLIENT" });
     }
