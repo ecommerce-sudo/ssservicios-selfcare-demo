@@ -17,7 +17,7 @@ function MSIcon({ name, filled }: { name: string; filled?: boolean }) {
       aria-hidden
       style={{
         fontVariationSettings: `'FILL' ${filled ? 1 : 0}, 'wght' 600, 'GRAD' 0, 'opsz' 24`,
-        fontSize: 22,
+        fontSize: 26,
         lineHeight: 1,
         color: "#7b00ff",
       }}
