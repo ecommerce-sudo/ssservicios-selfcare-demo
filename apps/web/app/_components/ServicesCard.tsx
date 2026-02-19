@@ -24,6 +24,29 @@ type Props = {
   rowCardStyle: React.CSSProperties;
 };
 
+function MSIcon({ name, filled }: { name: string; filled?: boolean }) {
+  return (
+    <span
+      className="material-symbols-outlined"
+      aria-hidden
+      style={{
+        fontVariationSettings: `'FILL' ${filled ? 1 : 0}, 'wght' 600, 'GRAD' 0, 'opsz' 24`,
+        fontSize: 20,
+        lineHeight: 1,
+        color: "#7b00ff",
+      }}
+    >
+      {name}
+    </span>
+  );
+}
+
+function serviceIconName(type: string) {
+  if (type === "INTERNET") return "wifi";
+  if (type === "MOBILE") return "smartphone";
+  return "settings";
+}
+
 export default function ServicesCard({
   servicesTop3,
   loadingServices,
@@ -57,7 +80,7 @@ export default function ServicesCard({
               style={{
                 ...rowCardStyle,
                 width: "100%",
-                minWidth: 0, // ✅ evita overflow en flex
+                minWidth: 0,
               }}
             >
               <div style={{ display: "flex", gap: 12, alignItems: "flex-start", minWidth: 0, flex: "1 1 auto" }}>
@@ -72,11 +95,10 @@ export default function ServicesCard({
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    fontWeight: 900,
                     flex: "0 0 auto",
                   }}
                 >
-                  {s.type === "INTERNET" ? "🌐" : s.type === "MOBILE" ? "📱" : "🔧"}
+                  <MSIcon name={serviceIconName(s.type)} filled />
                 </div>
 
                 <div style={{ minWidth: 0, flex: "1 1 auto" }}>
@@ -94,7 +116,6 @@ export default function ServicesCard({
                     {s.name}
                   </div>
 
-                  {/* ✅ importantísimo: extra puede empujar el layout si no cortás */}
                   <div
                     style={{
                       marginTop: 4,
