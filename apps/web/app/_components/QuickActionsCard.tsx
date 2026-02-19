@@ -93,11 +93,14 @@ function Item({
 
 export default function QuickActionsCard({ showAdmin, onToggleAdmin, openStore }: Props) {
   const gridStyle: React.CSSProperties = {
-    marginTop: 12,
-    display: "grid",
-    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-    gap: 10,
-  };
+  marginTop: 12,
+  display: "grid",
+  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+  gap: 10,
+  width: "100%",
+  minWidth: 0,
+};
+
 
   return (
     <Card>
