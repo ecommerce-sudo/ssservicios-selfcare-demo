@@ -17,7 +17,7 @@ function MSIcon({ name, filled }: { name: string; filled?: boolean }) {
       aria-hidden
       style={{
         fontVariationSettings: `'FILL' ${filled ? 1 : 0}, 'wght' 600, 'GRAD' 0, 'opsz' 24`,
-        fontSize: 26,
+        fontSize: 22,
         lineHeight: 1,
         color: "#7b00ff",
       }}
@@ -59,34 +59,22 @@ function Item({
         boxShadow: "0 10px 24px rgba(0,0,0,0.06)",
         cursor: onClick ? "pointer" : "default",
         userSelect: "none",
-
-        // ✅ anti-overflow
         width: "100%",
         minWidth: 0,
       }}
     >
-      <div
-  aria-hidden
-  style={{
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    flex: "0 0 auto",
-  }}
->
-  {icon}
-</div>
-
+      {/* ✅ sin círculo contenedor: icono “libre” */}
+      <div aria-hidden style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+        {icon}
+      </div>
 
       <div
         style={{
           fontSize: 12,
-          fontWeight: 600,
+          fontWeight: 800,
           color: "#0f172a",
           opacity: 0.9,
           lineHeight: 1.15,
-
-          // ✅ evita que una palabra rara empuje el grid
           width: "100%",
           minWidth: 0,
         }}
@@ -112,8 +100,6 @@ export default function QuickActionsCard({ showAdmin, onToggleAdmin, openStore }
     display: "grid",
     gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
     gap: 10,
-
-    // ✅ anti-overflow
     width: "100%",
     minWidth: 0,
   };
@@ -129,17 +115,11 @@ export default function QuickActionsCard({ showAdmin, onToggleAdmin, openStore }
 
       <div style={gridStyle}>
         <Item label="Facturas" icon={<MSIcon name="receipt_long" filled />} href="/invoices" />
-        <Item label="Servicios" icon={<MSIcon name="lan" />} href="/services" />
-        <Item label="Beneficios" icon={<MSIcon name="workspace_premium" filled />} href="/benefits" />
-        <Item
-          label="SSStore"
-          icon={<MSIcon name="shopping_bag" />}
-          onClick={openStore}
-          title="Abre SSStore en una pestaña nueva"
-        />
-        <Item label="Soporte" icon={<MSIcon name="support_agent" />} title="Próximo: soporte / tickets" />
-        <Item label="Débito" icon={<MSIcon name="credit_card" />} title="Próximo: débito automático" />
+        <Item label="SSStore" icon={<MSIcon name="shopping_bag" />} onClick={openStore} title="Abre SSStore en una pestaña nueva" />
         <Item label="Perfil" icon={<MSIcon name="person" />} title="Próximo: perfil y datos" />
+
+        <Item label="Soporte" icon={<MSIcon name="support_agent" />} href="/support" />
+        <Item label="Débito" icon={<MSIcon name="credit_card" />} title="Próximo: débito automático" />
         <Item label="Más" icon={<MSIcon name="add_circle" />} title="Más opciones (demo)" />
       </div>
     </Card>
