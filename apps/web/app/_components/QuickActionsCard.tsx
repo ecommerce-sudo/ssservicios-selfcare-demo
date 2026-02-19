@@ -71,7 +71,7 @@ function Item({
       <div
         style={{
           fontSize: 12,
-          fontWeight: 800,
+          fontWeight: 700,
           color: "#0f172a",
           opacity: 0.9,
           lineHeight: 1.15,
@@ -98,7 +98,8 @@ export default function QuickActionsCard({ showAdmin, onToggleAdmin, openStore }
   const gridStyle: React.CSSProperties = {
     marginTop: 12,
     display: "grid",
-    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+    // ✅ 2 cols mobile, 4 cols desktop
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
     gap: 10,
     width: "100%",
     minWidth: 0,
@@ -115,13 +116,24 @@ export default function QuickActionsCard({ showAdmin, onToggleAdmin, openStore }
 
       <div style={gridStyle}>
         <Item label="Facturas" icon={<MSIcon name="receipt_long" filled />} href="/invoices" />
-        <Item label="SSStore" icon={<MSIcon name="shopping_bag" />} onClick={openStore} title="Abre SSStore en una pestaña nueva" />
-        <Item label="Perfil" icon={<MSIcon name="person" />} title="Próximo: perfil y datos" />
-
+        <Item
+          label="SSStore"
+          icon={<MSIcon name="shopping_bag" />}
+          onClick={openStore}
+          title="Abre SSStore en una pestaña nueva"
+        />
         <Item label="Soporte" icon={<MSIcon name="support_agent" />} href="/support" />
-        <Item label="Débito" icon={<MSIcon name="credit_card" />} title="Próximo: débito automático" />
-        <Item label="Más" icon={<MSIcon name="add_circle" />} title="Más opciones (demo)" />
+        <Item label="Perfil" icon={<MSIcon name="person" />} title="Próximo: perfil y datos" />
       </div>
+
+      {/* ✅ media query simple inline: 4 cols si hay ancho suficiente */}
+      <style jsx>{`
+        @media (min-width: 640px) {
+          div[style] > :global(div[style*="grid-template-columns"]) {
+            grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+          }
+        }
+      `}</style>
     </Card>
   );
 }
