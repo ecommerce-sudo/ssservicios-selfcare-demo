@@ -8,23 +8,34 @@ type Props = {
   showAdmin: boolean;
   onToggleAdmin: () => void;
   openStore: () => void;
-
-  // seguimos aceptando tus styles por compat, pero NO los usamos (así controlamos look igual a captura)
-  quickGridStyle?: React.CSSProperties;
-  quickItemStyle?: React.CSSProperties;
-  quickIconStyle?: React.CSSProperties;
-  quickTextStyle?: React.CSSProperties;
 };
+
+function MSIcon({ name, filled }: { name: string; filled?: boolean }) {
+  return (
+    <span
+      className="material-symbols-outlined"
+      aria-hidden
+      style={{
+        fontVariationSettings: `'FILL' ${filled ? 1 : 0}, 'wght' 600, 'GRAD' 0, 'opsz' 24`,
+        fontSize: 22,
+        lineHeight: 1,
+        color: "#7b00ff",
+      }}
+    >
+      {name}
+    </span>
+  );
+}
 
 function Item({
   label,
-  emoji,
+  icon,
   href,
   onClick,
   title,
 }: {
   label: string;
-  emoji: string;
+  icon: React.ReactNode;
   href?: string;
   onClick?: () => void;
   title?: string;
@@ -60,12 +71,11 @@ function Item({
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background: "rgba(123, 0, 255, 0.12)",
-          border: "1px solid rgba(123, 0, 255, 0.20)",
-          fontSize: 20,
+          background: "rgba(123, 0, 255, 0.10)",
+          border: "1px solid rgba(123, 0, 255, 0.18)",
         }}
       >
-        {emoji}
+        {icon}
       </div>
 
       <div style={{ fontSize: 12, fontWeight: 900, color: "#0f172a", opacity: 0.9 }}>{label}</div>
@@ -79,15 +89,10 @@ function Item({
       </Link>
     );
   }
-
   return content;
 }
 
-export default function QuickActionsCard({
-  showAdmin,
-  onToggleAdmin,
-  openStore,
-}: Props) {
+export default function QuickActionsCard({ showAdmin, onToggleAdmin, openStore }: Props) {
   return (
     <Card>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
@@ -97,7 +102,6 @@ export default function QuickActionsCard({
         </Btn>
       </div>
 
-      {/* ✅ Grilla tipo captura: 3 cols en mobile, 4 cols en pantallas más grandes */}
       <div
         style={{
           marginTop: 10,
@@ -106,19 +110,15 @@ export default function QuickActionsCard({
           gap: 10,
         }}
       >
-        <Item label="Facturas" emoji="🧾" href="/invoices" />
-        <Item label="Servicios" emoji="🌐" href="/services" />
-        <Item label="Beneficios" emoji="🎁" href="/benefits" />
-        <Item label="SSStore" emoji="🛒" onClick={openStore} title="Abre SSStore en una pestaña nueva" />
-        <Item label="Soporte" emoji="🛠️" title="Próximo: soporte / tickets" />
-        <Item label="Débito" emoji="💳" title="Próximo: débito automático" />
-        <Item label="Perfil" emoji="👤" title="Próximo: perfil y datos" />
-        <Item label="Más" emoji="➕" title="Más opciones (demo)" />
+        <Item label="Facturas" icon={<MSIcon name="receipt_long" filled />} href="/invoices" />
+        <Item label="Servicios" icon={<MSIcon name="lan" />} href="/services" />
+        <Item label="Beneficios" icon={<MSIcon name="workspace_premium" filled />} href="/benefits" />
+        <Item label="SSStore" icon={<MSIcon name="shopping_bag" />} onClick={openStore} title="Abre SSStore en una pestaña nueva" />
+        <Item label="Soporte" icon={<MSIcon name="support_agent" />} title="Próximo: soporte / tickets" />
+        <Item label="Débito" icon={<MSIcon name="credit_card" />} title="Próximo: débito automático" />
+        <Item label="Perfil" icon={<MSIcon name="person" />} title="Próximo: perfil y datos" />
+        <Item label="Más" icon={<MSIcon name="add_circle" />} title="Más opciones (demo)" />
       </div>
-
-      {/* Ajuste desktop: 4 columnas sin romper mobile (inline media query no existe),
-          entonces lo dejamos para el Paso siguiente con CSS global o Tailwind.
-          Por ahora queda MUY parecido en mobile que es lo que se ve en captura. */}
     </Card>
   );
 }
