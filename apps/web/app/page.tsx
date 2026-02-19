@@ -10,6 +10,8 @@ import ServicesCard from "./_components/ServicesCard";
 import QuickActionsCard from "./_components/QuickActionsCard";
 import BenefitCard from "./_components/BenefitCard";
 import AdminPanel from "./_components/AdminPanel";
+import HomeFooter from "./_components/HomeFooter";
+
 
 type MeResponse = {
   clientId: number;
@@ -532,10 +534,8 @@ export default function Page() {
           />
         ) : null}
 
-        <div style={{ marginTop: 18, textAlign: "center", fontSize: 12, opacity: 0.65 }}>
-          El beneficio se asigna automáticamente según plan, historial de pagos y antigüedad.
-          <div style={{ marginTop: 8, fontWeight: 700, opacity: 0.7 }}>🔒 Sistema seguro de SSServicios (demo)</div>
-        </div>
+       <HomeFooter />
+
       </div>
     </div>
   );
