@@ -66,21 +66,17 @@ function Item({
       }}
     >
       <div
-        aria-hidden
-        style={{
-          width: 46,
-          height: 46,
-          borderRadius: 999,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          background: "rgba(123,0,255,0.10)",
-          border: "1px solid rgba(123,0,255,0.18)",
-          flex: "0 0 auto",
-        }}
-      >
-        {icon}
-      </div>
+  aria-hidden
+  style={{
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flex: "0 0 auto",
+  }}
+>
+  {icon}
+</div>
+
 
       <div
         style={{
