@@ -3,14 +3,13 @@
 import Link from "next/link";
 import React, { useEffect, useMemo, useState } from "react";
 import { Btn, Card, Pill, SectionTitle } from "./ui";
+
 import AppHeader from "./_components/AppHeader";
 import NextInvoiceCard from "./_components/NextInvoiceCard";
 import ServicesCard from "./_components/ServicesCard";
 import QuickActionsCard from "./_components/QuickActionsCard";
 import BenefitCard from "./_components/BenefitCard";
-
-
-
+import AdminPanel from "./_components/AdminPanel";
 
 type MeResponse = {
   clientId: number;
@@ -71,7 +70,7 @@ type AccountResponse = {
 const DEFAULT_API_BASE = "https://ssservicios-selfcare-demo.onrender.com";
 const DEFAULT_STORE_URL = "https://ssstore.com.ar";
 
-// ✅ violeta (capturas). Después lo tokenizamos.
+// violeta
 const BRAND = "#7b00ff";
 
 type Tier = "INFINIUM" | "CLASSIC" | "BLACK";
@@ -133,10 +132,7 @@ function dueBadge(inv: { dueDate: string | null; issuedAt: string | null; status
 
   if (diffDays < 0) {
     const days = Math.abs(diffDays);
-    return {
-      label: days === 1 ? "Vencida hace 1 día" : `Vencida hace ${days} días`,
-      tone: "bad" as const,
-    };
+    return { label: days === 1 ? "Vencida hace 1 día" : `Vencida hace ${days} días`, tone: "bad" as const };
   }
   if (diffDays === 0) return { label: "Vence hoy", tone: "warn" as const };
   if (diffDays === 1) return { label: "Vence mañana", tone: "warn" as const };
@@ -217,7 +213,6 @@ export default function Page() {
       const msg = (data && (data.detail || data.error || data.message)) || `HTTP ${res.status} ${res.statusText}`;
       throw new Error(`${msg} | url=${url}`);
     }
-
     return data;
   }
 
@@ -291,7 +286,6 @@ export default function Page() {
     setActionError(null);
     setActionResult(null);
     setActionLoading("purchase");
-
     try {
       const amt = Number(String(amount).trim());
       if (!Number.isFinite(amt) || amt <= 0) throw new Error("Monto inválido");
@@ -315,7 +309,6 @@ export default function Page() {
     setActionError(null);
     setActionResult(null);
     setActionLoading("reconcile");
-
     try {
       const data = await fetchJSON("/v1/me/orders/reconcile");
       setActionResult(data);
@@ -480,68 +473,64 @@ export default function Page() {
           rowCardStyle={rowCard}
         />
 
-        {/* 2) Mis servicios */}
-         <ServicesCard
-           servicesTop3={servicesTop3}
-           loadingServices={loadingServices}
-           onRefresh={loadServices}
-           serviceLabel={serviceLabel}
-           statusLabel={statusLabel}
-           statusTone={statusTone}
-           rowCardStyle={rowCard}
-         />
+        <ServicesCard
+          servicesTop3={servicesTop3}
+          loadingServices={loadingServices}
+          onRefresh={loadServices}
+          serviceLabel={serviceLabel}
+          statusLabel={statusLabel}
+          statusTone={statusTone}
+          rowCardStyle={rowCard}
+        />
 
-
-        {/* 3) Accesos rápidos */}
         <QuickActionsCard
-           showAdmin={showAdmin}
-           onToggleAdmin={() => setShowAdmin((v) => !v)}
-           openStore={openStore}
-           quickGridStyle={quickGrid}
-           quickItemStyle={quickItem}
-           quickIconStyle={quickIcon}
-           quickTextStyle={quickText}
-         />
+          showAdmin={showAdmin}
+          onToggleAdmin={() => setShowAdmin((v) => !v)}
+          openStore={openStore}
+          quickGridStyle={quickGrid}
+          quickItemStyle={quickItem}
+          quickIconStyle={quickIcon}
+          quickTextStyle={quickText}
+        />
 
-
-        {/* 4) Beneficio disponible (tier por escala) */}
         <BenefitCard
           tier={tier}
           accent={accent}
           currency={currency}
           cupo={cupo}
-           me={me ? {
-    purchaseAvailableOfficial: me.purchaseAvailableOfficial,
-    purchaseAvailableReserved: me.purchaseAvailableReserved,
-    purchaseAvailable: me.purchaseAvailable,
-  } : null}
-  brand={BRAND}
-  apiBase={API_BASE}
-  benefitWrapStyle={benefitWrap}
-  tierBadgeStyle={tierBadge}
-  benefitAmountStyle={benefitAmount}
-  benefitBtnStyle={benefitBtn}
-  fmtMoney={fmtMoney}
-  openStore={openStore}
-  actionError={actionError}
-/>
-
+          me={
+            me
+              ? {
+                  purchaseAvailableOfficial: me.purchaseAvailableOfficial,
+                  purchaseAvailableReserved: me.purchaseAvailableReserved,
+                  purchaseAvailable: me.purchaseAvailable,
+                }
+              : null
+          }
+          brand={BRAND}
+          apiBase={API_BASE}
+          benefitWrapStyle={benefitWrap}
+          tierBadgeStyle={tierBadge}
+          benefitAmountStyle={benefitAmount}
+          benefitBtnStyle={benefitBtn}
+          fmtMoney={fmtMoney}
+          openStore={openStore}
+          actionError={actionError}
+        />
 
         {showAdmin ? (
-          {showAdmin ? (
-  <AdminPanel
-    amount={amount}
-    desc={desc}
-    setAmount={setAmount}
-    setDesc={setDesc}
-    actionLoading={actionLoading}
-    runPurchase={runPurchase}
-    runReconcile={runReconcile}
-    actionResult={actionResult}
-    inputStyle={inputStyle}
-  />
-) : null}
-
+          <AdminPanel
+            amount={amount}
+            desc={desc}
+            setAmount={setAmount}
+            setDesc={setDesc}
+            actionLoading={actionLoading}
+            runPurchase={runPurchase}
+            runReconcile={runReconcile}
+            actionResult={actionResult}
+            inputStyle={inputStyle}
+          />
+        ) : null}
 
         <div style={{ marginTop: 18, textAlign: "center", fontSize: 12, opacity: 0.65 }}>
           El beneficio se asigna automáticamente según plan, historial de pagos y antigüedad.
