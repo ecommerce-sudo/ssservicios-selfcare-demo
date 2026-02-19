@@ -81,7 +81,7 @@ function Item({
       <div
         style={{
           fontSize: 12,
-          fontWeight: 900,
+          fontWeight: 700,
           color: "#0f172a",
           opacity: 0.9,
           lineHeight: 1.15,
