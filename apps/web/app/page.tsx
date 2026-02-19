@@ -1,8 +1,6 @@
 "use client";
 
-import Link from "next/link";
 import React, { useEffect, useMemo, useState } from "react";
-import { Btn, Card, Pill, SectionTitle } from "./ui";
 
 import AppHeader from "./_components/AppHeader";
 import NextInvoiceCard from "./_components/NextInvoiceCard";
@@ -94,7 +92,7 @@ function getTier(cupo: number): { tier: Tier; accent: string; bg: string } {
     tier: "BLACK",
     accent: "#111827",
     bg: "linear-gradient(135deg, #232526 0%, #414345 100%)",
-    };
+  };
 }
 
 function fmtMoney(n: number) {
@@ -184,7 +182,6 @@ export default function Page() {
   const [nextInvoice, setNextInvoice] = useState<NextInvoiceDTO | null>(null);
   const [account, setAccount] = useState<AccountResponse | null>(null);
 
-  const [loadingMe, setLoadingMe] = useState(false);
   const [loadingServices, setLoadingServices] = useState(false);
   const [loadingNextInv, setLoadingNextInv] = useState(false);
   const [loadingAccount, setLoadingAccount] = useState(false);
@@ -218,7 +215,6 @@ export default function Page() {
   }
 
   async function loadMe() {
-    setLoadingMe(true);
     try {
       const data = (await fetchJSON("/v1/me")) as MeResponse;
       setMe(data);
@@ -227,8 +223,6 @@ export default function Page() {
       console.error(e);
       setMe(null);
       setActionError(String(e?.message ?? e));
-    } finally {
-      setLoadingMe(false);
     }
   }
 
@@ -335,7 +329,6 @@ export default function Page() {
   const currency = (me?.currency ?? "ARS").toUpperCase();
   const { tier, accent, bg } = getTier(cupo);
 
-  // ===== Styles =====
   const shell: React.CSSProperties = {
     minHeight: "100vh",
     background: "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)",
@@ -358,39 +351,6 @@ export default function Page() {
     justifyContent: "space-between",
     gap: 12,
   };
-
-  const quickGrid: React.CSSProperties = {
-    marginTop: 10,
-    display: "grid",
-    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-    gap: 10,
-  };
-
-  const quickItem: React.CSSProperties = {
-    padding: "12px 10px",
-    borderRadius: 16,
-    border: "1px solid #e6eef5",
-    background: "#ffffff",
-    boxShadow: "0 10px 24px rgba(0,0,0,0.06)",
-    textAlign: "center",
-    cursor: "pointer",
-    userSelect: "none",
-  };
-
-  const quickIcon: React.CSSProperties = {
-    width: 44,
-    height: 44,
-    borderRadius: 999,
-    margin: "0 auto",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    background: "rgba(90, 200, 250, 0.16)",
-    border: "1px solid rgba(90, 200, 250, 0.28)",
-    fontSize: 20,
-  };
-
-  const quickText: React.CSSProperties = { marginTop: 8, fontSize: 12, fontWeight: 900, opacity: 0.9 };
 
   const inputStyle: React.CSSProperties = {
     padding: "10px 12px",
@@ -458,78 +418,81 @@ export default function Page() {
         accountStatus={account?.status}
       />
 
-     <div style={container}>
-  <div style={{ display: "grid", gap: 14 }}>
-    <NextInvoiceCard
-      nextInvoice={nextInvoice}
-      loadingNextInv={loadingNextInv}
-      onRefresh={loadNextInvoice}
-      invoicePdfUrl={invoicePdfUrl}
-      currencyFallback={currency}
-      accountStatus={account?.status}
-      accountBadgeTone={accountTone(account?.status ?? "neutral")}
-      accountBadgeLabel={account ? accountLabel(account.status) : "ESTADO"}
-      dueBadge={dueBadge}
-      fmtDateISO={fmtDateISO}
-      fmtMoney={fmtMoney}
-      rowCardStyle={rowCard}
-    />
+      <div style={container}>
+        <div style={{ display: "grid", gap: 14 }}>
+          <NextInvoiceCard
+            nextInvoice={nextInvoice}
+            loadingNextInv={loadingNextInv}
+            onRefresh={loadNextInvoice}
+            invoicePdfUrl={invoicePdfUrl}
+            currencyFallback={currency}
+            accountStatus={account?.status}
+            accountBadgeTone={accountTone(account?.status ?? "neutral")}
+            accountBadgeLabel={account ? accountLabel(account.status) : "ESTADO"}
+            dueBadge={dueBadge}
+            fmtDateISO={fmtDateISO}
+            fmtMoney={fmtMoney}
+            rowCardStyle={rowCard}
+          />
 
-    <QuickActionsCard
-      showAdmin={showAdmin}
-      onToggleAdmin={() => setShowAdmin((v) => !v)}
-      openStore={openStore}
-    />
+          <QuickActionsCard
+            showAdmin={showAdmin}
+            onToggleAdmin={() => setShowAdmin((v) => !v)}
+            openStore={openStore}
+          />
 
-    <ServicesCard
-      servicesTop3={servicesTop3}
-      loadingServices={loadingServices}
-      onRefresh={loadServices}
-      serviceLabel={serviceLabel}
-      statusLabel={statusLabel}
-      statusTone={statusTone}
-      rowCardStyle={rowCard}
-    />
+          <ServicesCard
+            servicesTop3={servicesTop3}
+            loadingServices={loadingServices}
+            onRefresh={loadServices}
+            serviceLabel={serviceLabel}
+            statusLabel={statusLabel}
+            statusTone={statusTone}
+            rowCardStyle={rowCard}
+          />
 
-    <BenefitCard
-      tier={tier}
-      accent={accent}
-      currency={currency}
-      cupo={cupo}
-      me={
-        me
-          ? {
-              purchaseAvailableOfficial: me.purchaseAvailableOfficial,
-              purchaseAvailableReserved: me.purchaseAvailableReserved,
-              purchaseAvailable: me.purchaseAvailable,
+          <BenefitCard
+            tier={tier}
+            accent={accent}
+            currency={currency}
+            cupo={cupo}
+            me={
+              me
+                ? {
+                    purchaseAvailableOfficial: me.purchaseAvailableOfficial,
+                    purchaseAvailableReserved: me.purchaseAvailableReserved,
+                    purchaseAvailable: me.purchaseAvailable,
+                  }
+                : null
             }
-          : null
-      }
-      brand={BRAND}
-      apiBase={API_BASE}
-      benefitWrapStyle={benefitWrap}
-      tierBadgeStyle={tierBadge}
-      benefitAmountStyle={benefitAmount}
-      benefitBtnStyle={benefitBtn}
-      fmtMoney={fmtMoney}
-      openStore={openStore}
-      actionError={actionError}
-    />
+            brand={BRAND}
+            apiBase={API_BASE}
+            benefitWrapStyle={benefitWrap}
+            tierBadgeStyle={tierBadge}
+            benefitAmountStyle={benefitAmount}
+            benefitBtnStyle={benefitBtn}
+            fmtMoney={fmtMoney}
+            openStore={openStore}
+            actionError={actionError}
+          />
 
-    {showAdmin ? (
-      <AdminPanel
-        amount={amount}
-        desc={desc}
-        setAmount={setAmount}
-        setDesc={setDesc}
-        actionLoading={actionLoading}
-        runPurchase={runPurchase}
-        runReconcile={runReconcile}
-        actionResult={actionResult}
-        inputStyle={inputStyle}
-      />
-    ) : null}
+          {showAdmin ? (
+            <AdminPanel
+              amount={amount}
+              desc={desc}
+              setAmount={setAmount}
+              setDesc={setDesc}
+              actionLoading={actionLoading}
+              runPurchase={runPurchase}
+              runReconcile={runReconcile}
+              actionResult={actionResult}
+              inputStyle={inputStyle}
+            />
+          ) : null}
 
-    <HomeFooter />
-  </div>
-</div>
+          <HomeFooter />
+        </div>
+      </div>
+    </div>
+  );
+}
