@@ -72,18 +72,17 @@ function escapeHtml(input: any): string {
 }
 
 /**
- * ✅ REAL: Conexiones Internet del cliente (Anatod)
- * Endpoint observado: /cliente/{id}/conexiones/internet
- * Devuelve paginado, usamos raw.data
+ * --- Anatod: fetch genérico (para conexiones por vertical)
+ * Best-effort: el caller decide si rompe o tolera.
  */
-async function anatodListConexionesInternetByCliente(anatodClientId: number | string) {
+async function anatodGetJSON(path: string) {
   const base = process.env.ANATOD_BASE_URL; // ej: https://api.anatod.ar/api
   const apiKey = process.env.ANATOD_API_KEY;
 
   if (!base) throw new Error("Missing env ANATOD_BASE_URL");
   if (!apiKey) throw new Error("Missing env ANATOD_API_KEY");
 
-  const url = `${base}/cliente/${encodeURIComponent(String(anatodClientId))}/conexiones/internet`;
+  const url = `${base}${path.startsWith("/") ? "" : "/"}${path}`;
 
   const res = await fetch(url, {
     method: "GET",
@@ -92,12 +91,102 @@ async function anatodListConexionesInternetByCliente(anatodClientId: number | st
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(
-      `ANATOD_CONEXIONES_INTERNET_FAILED status=${res.status} body=${text.slice(0, 300)}`
-    );
+    throw new Error(`ANATOD_GET_FAILED url=${url} status=${res.status} body=${text.slice(0, 300)}`);
   }
 
-  return (await res.json()) as any; // { current_page, data: [...], ... }
+  return (await res.json()) as any;
+}
+
+/**
+ * ✅ REAL: Conexiones Internet del cliente (Anatod)
+ * Endpoint observado: /cliente/{id}/conexiones/internet
+ */
+async function anatodListConexionesInternetByCliente(anatodClientId: number | string) {
+  return anatodGetJSON(`/cliente/${encodeURIComponent(String(anatodClientId))}/conexiones/internet`);
+}
+
+/**
+ * ✅ REAL: Conexiones Telefonía del cliente (Anatod)
+ * Endpoint (doc): /cliente/{id}/conexiones/telefonia
+ */
+async function anatodListConexionesTelefoniaByCliente(anatodClientId: number | string) {
+  return anatodGetJSON(
+    `/cliente/${encodeURIComponent(String(anatodClientId))}/conexiones/telefonia`
+  );
+}
+
+/**
+ * ✅ REAL: Conexiones Televisión del cliente (Anatod)
+ * Endpoint (doc): /cliente/{id}/conexiones/television
+ */
+async function anatodListConexionesTelevisionByCliente(anatodClientId: number | string) {
+  return anatodGetJSON(
+    `/cliente/${encodeURIComponent(String(anatodClientId))}/conexiones/television`
+  );
+}
+
+/**
+ * Mapper tolerante: convierte cualquier item "conexion_*" (o similar) en un DTO de Service.
+ * - Para Internet ya sabemos: conexion_id, conexion_plan, conexion_domicilio, conexion_cortado
+ * - Para Telefonía/TV asumimos que viene también en forma de "conexiones" (similar estructura),
+ *   pero si cambia, igual devolvemos algo usable (id/name/status) sin romper.
+ */
+function mapConexionToServiceDTO(item: any, type: "INTERNET" | "PHONE" | "TV") {
+  const id =
+    item?.conexion_id ??
+    item?.telefono_id ??
+    item?.television_id ??
+    item?.id ??
+    item?.servicio_id ??
+    item?.linea_id ??
+    item?.abonado_id ??
+    null;
+
+  const planId =
+    item?.conexion_plan ??
+    item?.plan_id ??
+    item?.telefono_plan ??
+    item?.television_plan ??
+    item?.servicio_plan ??
+    null;
+
+  const domicilio =
+    item?.conexion_domicilio ??
+    item?.domicilio ??
+    item?.direccion ??
+    item?.instalacion_domicilio ??
+    "";
+
+  const cortadoRaw =
+    item?.conexion_cortado ??
+    item?.cortado ??
+    item?.estado_corte ??
+    item?.servicio_cortado ??
+    null;
+
+  // Activo "fuerte" si existe el campo cortado tipo N/Y; si no existe, no filtramos (unknown)
+  const hasCortadoFlag = cortadoRaw !== null && cortadoRaw !== undefined && String(cortadoRaw).trim() !== "";
+  const isActive = hasCortadoFlag ? String(cortadoRaw).toUpperCase() === "N" : true;
+
+  const status = isActive ? "ACTIVE" : "INACTIVE";
+
+  // Nombre: mientras no tengamos endpoint de planes, dejamos algo consistente
+  const name =
+    item?.name ??
+    item?.servicio_nombre ??
+    item?.plan_nombre ??
+    item?.descripcion ??
+    (planId ? `${type} (Plan ${planId})` : `${type} (Servicio ${String(id ?? "s/n")})`);
+
+  return {
+    id: String(id ?? `${type}_${Math.random().toString(16).slice(2)}`),
+    type,
+    name: String(name),
+    status,
+    extra: domicilio ? String(domicilio) : "",
+    sourceId: id ? Number(id) : undefined,
+    planId: planId ? Number(planId) : undefined,
+  };
 }
 
 /**
@@ -212,42 +301,79 @@ app.get("/v1/me", async (_req, res) => {
   }
 });
 
-// ---------- Servicios (REAL: solo Internet por ahora) ----------
+// ---------- Servicios (REAL: Internet + Telefonía + TV, best-effort) ----------
 app.get("/v1/me/services", async (_req, res) => {
   try {
     // 1) Cliente real (para obtener anatodClientId)
     const me = await anatodGetClienteById(DEMO_CLIENT_ID);
     const anatodClientId = Number(me.clienteId);
 
-    // 2) Conexiones internet reales
-    const raw = await anatodListConexionesInternetByCliente(anatodClientId);
-    const list = Array.isArray(raw?.data) ? raw.data : [];
+    // 2) Llamadas best-effort en paralelo
+    const results = await Promise.allSettled([
+      anatodListConexionesInternetByCliente(anatodClientId),
+      anatodListConexionesTelefoniaByCliente(anatodClientId),
+      anatodListConexionesTelevisionByCliente(anatodClientId),
+    ]);
 
-    // 3) Activo: conexion_cortado === "N"
-    const active = list.filter(
-      (x: any) => String(x?.conexion_cortado ?? "").toUpperCase() === "N"
-    );
+    const [internetRes, phoneRes, tvRes] = results;
 
-    // 4) DTO simple para la app (podemos enriquecer con "plan nombre" después)
-    const services = active.map((c: any) => ({
-      id: String(c.conexion_id),
-      type: "INTERNET",
-      name: `Internet Hogar (Plan ${c.conexion_plan})`,
-      status: "ACTIVE",
-      extra: c.conexion_domicilio ? String(c.conexion_domicilio) : "",
-      conexionId: Number(c.conexion_id),
-      planId: Number(c.conexion_plan),
-    }));
+    const errors: Array<{ type: string; message: string }> = [];
+    const services: Array<any> = [];
 
+    // Internet
+    if (internetRes.status === "fulfilled") {
+      const list = Array.isArray(internetRes.value?.data) ? internetRes.value.data : [];
+      // Activo fuerte si existe conexion_cortado
+      const active = list.filter(
+        (x: any) =>
+          String(x?.conexion_cortado ?? "").toUpperCase() === "N" ||
+          String(x?.conexion_cortado ?? "").trim() === ""
+      );
+      for (const item of active) services.push(mapConexionToServiceDTO(item, "INTERNET"));
+    } else {
+      errors.push({ type: "INTERNET", message: String(internetRes.reason?.message ?? internetRes.reason) });
+    }
+
+    // Telefonía (si no hay data, no aparece)
+    if (phoneRes.status === "fulfilled") {
+      const list = Array.isArray(phoneRes.value?.data) ? phoneRes.value.data : [];
+      // si hay flag de cortado, filtramos; si no, mostramos todo (UNKNOWN->ACTIVE)
+      const active = list.filter((x: any) => {
+        const v = x?.conexion_cortado ?? x?.cortado ?? x?.servicio_cortado;
+        if (v === null || v === undefined || String(v).trim() === "") return true;
+        return String(v).toUpperCase() === "N";
+      });
+      for (const item of active) services.push(mapConexionToServiceDTO(item, "PHONE"));
+    } else {
+      errors.push({ type: "PHONE", message: String(phoneRes.reason?.message ?? phoneRes.reason) });
+    }
+
+    // TV
+    if (tvRes.status === "fulfilled") {
+      const list = Array.isArray(tvRes.value?.data) ? tvRes.value.data : [];
+      const active = list.filter((x: any) => {
+        const v = x?.conexion_cortado ?? x?.cortado ?? x?.servicio_cortado;
+        if (v === null || v === undefined || String(v).trim() === "") return true;
+        return String(v).toUpperCase() === "N";
+      });
+      for (const item of active) services.push(mapConexionToServiceDTO(item, "TV"));
+    } else {
+      errors.push({ type: "TV", message: String(tvRes.reason?.message ?? tvRes.reason) });
+    }
+
+    // 3) Respuesta consolidada
     res.json({
       clientId: Number(DEMO_CLIENT_ID),
       anatodClientId,
       services,
-      source: "anatod:/cliente/{id}/conexiones/internet",
+      source: "anatod:/cliente/{id}/conexiones/*",
       meta: {
-        total: Number(raw?.total ?? services.length),
-        per_page: Number(raw?.per_page ?? 0) || undefined,
-        current_page: Number(raw?.current_page ?? 1),
+        fetched: {
+          internet: internetRes.status === "fulfilled",
+          telefonia: phoneRes.status === "fulfilled",
+          television: tvRes.status === "fulfilled",
+        },
+        errors, // útil para debug; si querés lo escondemos después en prod
       },
     });
   } catch (err: any) {
