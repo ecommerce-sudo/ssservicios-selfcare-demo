@@ -7,10 +7,10 @@ type Product = {
   name: string;
   price?: string | number | null;
   stock?: number | null;
+  image_url?: string | null;
 };
 
 function getCookie(name: string): string | null {
-  // parse simple de cookies
   const parts = document.cookie.split(';').map((c) => c.trim());
   const found = parts.find((c) => c.startsWith(`${name}=`));
   if (!found) return null;
@@ -43,12 +43,9 @@ export default function StaffCatalogPage() {
         headers: {
           Authorization: `Bearer ${token}`,
         },
-        // NO usar credentials en cross-site con origin "*"
-        // credentials: 'include',
       });
 
       if (!res.ok) {
-        // Para ver el detalle que manda la API (401/403)
         const t = await res.text();
         throw new Error(t || `Error HTTP ${res.status}`);
       }
@@ -91,11 +88,52 @@ export default function StaffCatalogPage() {
 
       <ul style={{ display: 'grid', gap: 10, padding: 0, listStyle: 'none' }}>
         {items.map((p) => (
-          <li key={p.id} style={{ border: '1px solid #eee', borderRadius: 12, padding: 12 }}>
-            <div style={{ fontWeight: 700 }}>{p.name}</div>
-            <div style={{ opacity: 0.8, marginTop: 4 }}>
-              ID: {p.id} {p.price != null ? `· $${p.price}` : ''}{' '}
-              {p.stock != null ? `· Stock: ${p.stock}` : ''}
+          <li
+            key={p.id}
+            style={{
+              border: '1px solid #eee',
+              borderRadius: 12,
+              padding: 12,
+              display: 'flex',
+              gap: 12,
+              alignItems: 'center',
+            }}
+          >
+            {p.image_url ? (
+              <img
+                src={p.image_url}
+                alt={p.name}
+                loading="lazy"
+                style={{
+                  width: 64,
+                  height: 64,
+                  objectFit: 'cover',
+                  borderRadius: 8,
+                  border: '1px solid #eee',
+                  flex: '0 0 auto',
+                }}
+              />
+            ) : (
+              <div
+                style={{
+                  width: 64,
+                  height: 64,
+                  borderRadius: 8,
+                  border: '1px solid #eee',
+                  background: '#fafafa',
+                  flex: '0 0 auto',
+                }}
+                title="Sin imagen"
+              />
+            )}
+
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {p.name}
+              </div>
+              <div style={{ opacity: 0.8, marginTop: 4 }}>
+                ID: {p.id} {p.price != null ? `· $${p.price}` : ''} {p.stock != null ? `· Stock: ${p.stock}` : ''}
+              </div>
             </div>
           </li>
         ))}
