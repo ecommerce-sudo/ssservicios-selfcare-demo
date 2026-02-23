@@ -1,7 +1,7 @@
 import { pool } from "./db.js";
 
 export type CatalogProductRow = {
-  id: string; // bigint/numeric puede venir como string
+  id: string; // bigint/numeric puede venir como string en pg
   name: string;
   price: string | null;
   stock: number | null;
@@ -9,7 +9,9 @@ export type CatalogProductRow = {
 };
 
 export async function listCatalogProducts(q?: string): Promise<CatalogProductRow[]> {
-  if (q && q.trim()) {
+  const query = (q ?? "").trim();
+
+  if (query) {
     const { rows } = await pool.query<CatalogProductRow>(
       `
       select id, name, price, stock, updated_at
@@ -18,7 +20,7 @@ export async function listCatalogProducts(q?: string): Promise<CatalogProductRow
       order by updated_at desc nulls last, id desc
       limit 100
       `,
-      [q.trim()]
+      [query]
     );
     return rows;
   }
