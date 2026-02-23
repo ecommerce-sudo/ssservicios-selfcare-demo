@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import jwt from "jsonwebtoken";
+import * as jwt from "jsonwebtoken";
 
 const STAFF_ACCESS_CODE = process.env.STAFF_ACCESS_CODE || "";
 const STAFF_JWT_SECRET = process.env.STAFF_JWT_SECRET || "";
@@ -21,8 +21,8 @@ export function staffLogin(req: Request, res: Response) {
 
   const token = jwt.sign(
     { role: "SELLER" },
-    STAFF_JWT_SECRET,
-    { expiresIn: STAFF_JWT_TTL }
+    STAFF_JWT_SECRET as jwt.Secret,
+    { expiresIn: STAFF_JWT_TTL as jwt.SignOptions["expiresIn"] }
   );
 
   return res.json({ access_token: token, role: "SELLER" });
