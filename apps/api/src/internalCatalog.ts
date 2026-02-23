@@ -46,6 +46,8 @@ export function registerInternalCatalogRoutes(app: any) {
           price: r.price ? Number(r.price) : null,
           stock: r.stock,
           image_url: r.image_url ?? null,
+          handle: r.handle ?? null,
+          public_url: r.public_url ?? null,
         }))
       );
     } catch (e: any) {
