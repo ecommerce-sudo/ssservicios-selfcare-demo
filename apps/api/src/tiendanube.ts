@@ -44,12 +44,21 @@ export async function tnListProducts(params: {
     headers: tnHeaders(),
   });
 
+  // ✅ Tiendanube: pedir una page > last page puede devolver 404 con "Last page is X"
+  if (res.status === 404) {
+    const txt = await res.text();
+    if (txt.includes("Last page")) {
+      return []; // fin de paginación
+    }
+    throw new Error(`Tiendanube /products error 404: ${txt}`);
+  }
+
   if (!res.ok) {
     const txt = await res.text();
     throw new Error(`Tiendanube /products error ${res.status}: ${txt}`);
   }
 
-  const data = (await res.json()) as unknown;
+  const data = (await res.json()) as any[];
 
   if (!Array.isArray(data)) {
     const txt = typeof data === "string" ? data : JSON.stringify(data);
