@@ -9,30 +9,63 @@ type Product = {
   stock?: number | null;
 };
 
+function getCookie(name: string): string | null {
+  // parse simple de cookies
+  const parts = document.cookie.split(';').map((c) => c.trim());
+  const found = parts.find((c) => c.startsWith(`${name}=`));
+  if (!found) return null;
+  return decodeURIComponent(found.substring(name.length + 1));
+}
+
 export default function StaffCatalogPage() {
   const [items, setItems] = useState<Product[]>([]);
   const [q, setQ] = useState('');
   const [err, setErr] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
   async function load() {
     setErr(null);
+    setLoading(true);
+
     try {
       const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || '';
-      const res = await fetch(`${apiBase}/internal/catalog/products?q=${encodeURIComponent(q)}`, {
+      if (!apiBase) {
+        throw new Error('Falta configurar NEXT_PUBLIC_API_BASE_URL en Vercel.');
+      }
+
+      const token = getCookie('staff_token');
+      if (!token) {
+        throw new Error('No hay sesión staff. Volvé a /staff/login e ingresá el código.');
+      }
+
+      const url = `${apiBase}/internal/catalog/products?q=${encodeURIComponent(q)}`;
+      const res = await fetch(url, {
         headers: {
-          // mandamos cookie al backend si lo tenés mismo dominio; si no, usá Authorization Bearer también
+          Authorization: `Bearer ${token}`,
         },
-        credentials: 'include',
+        // NO usar credentials en cross-site con origin "*"
+        // credentials: 'include',
       });
 
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) {
+        // Para ver el detalle que manda la API (401/403)
+        const t = await res.text();
+        throw new Error(t || `Error HTTP ${res.status}`);
+      }
+
       setItems(await res.json());
     } catch (e: any) {
       setErr(e?.message ?? 'Error');
+      setItems([]);
+    } finally {
+      setLoading(false);
     }
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div style={{ padding: 16, fontFamily: 'system-ui' }}>
@@ -45,8 +78,12 @@ export default function StaffCatalogPage() {
           placeholder="Buscar…"
           style={{ padding: 10, borderRadius: 8, border: '1px solid #ddd' }}
         />
-        <button onClick={load} style={{ padding: 10, borderRadius: 8, border: '1px solid #ddd' }}>
-          Buscar
+        <button
+          onClick={load}
+          disabled={loading}
+          style={{ padding: 10, borderRadius: 8, border: '1px solid #ddd' }}
+        >
+          {loading ? 'Buscando…' : 'Buscar'}
         </button>
       </div>
 
@@ -57,7 +94,8 @@ export default function StaffCatalogPage() {
           <li key={p.id} style={{ border: '1px solid #eee', borderRadius: 12, padding: 12 }}>
             <div style={{ fontWeight: 700 }}>{p.name}</div>
             <div style={{ opacity: 0.8, marginTop: 4 }}>
-              ID: {p.id} {p.price != null ? `· $${p.price}` : ''} {p.stock != null ? `· Stock: ${p.stock}` : ''}
+              ID: {p.id} {p.price != null ? `· $${p.price}` : ''}{' '}
+              {p.stock != null ? `· Stock: ${p.stock}` : ''}
             </div>
           </li>
         ))}
