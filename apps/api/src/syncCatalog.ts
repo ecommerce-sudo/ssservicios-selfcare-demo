@@ -28,24 +28,33 @@ function pickUpdatedAt(p: any): string | null {
   return p?.updated_at ?? null;
 }
 
+function pickImageUrl(p: any): string | null {
+  const imgs = Array.isArray(p?.images) ? p.images : [];
+  const first = imgs[0];
+  const src = first?.src;
+  return typeof src === "string" && src.length > 0 ? src : null;
+}
+
 async function upsertProduct(row: {
   id: number;
   name: string;
   price: number | null;
   stock: number | null;
   updated_at: string | null;
+  image_url: string | null;
 }) {
   await pool.query(
     `
-    insert into catalog_products (id, name, price, stock, updated_at)
-    values ($1, $2, $3, $4, $5)
+    insert into catalog_products (id, name, price, stock, updated_at, image_url)
+    values ($1, $2, $3, $4, $5, $6)
     on conflict (id) do update
     set name = excluded.name,
         price = excluded.price,
         stock = excluded.stock,
-        updated_at = excluded.updated_at
+        updated_at = excluded.updated_at,
+        image_url = excluded.image_url
     `,
-    [row.id, row.name, row.price, row.stock, row.updated_at]
+    [row.id, row.name, row.price, row.stock, row.updated_at, row.image_url]
   );
 }
 
@@ -72,6 +81,7 @@ export async function syncCatalogFull(): Promise<{ upserted: number }> {
         price: pickPrice(p),
         stock: pickStock(p),
         updated_at: pickUpdatedAt(p),
+        image_url: pickImageUrl(p),
       });
       upserted++;
     }
@@ -83,7 +93,6 @@ export async function syncCatalogFull(): Promise<{ upserted: number }> {
 }
 
 export async function syncCatalogIncremental(): Promise<{ upserted: number; since: string | null }> {
-  // Tomamos el máximo updated_at local y pedimos cambios desde ahí
   const last = await getLastUpdatedAt();
 
   // Buffer para no perder cambios por clock drift (5 min)
@@ -109,6 +118,7 @@ export async function syncCatalogIncremental(): Promise<{ upserted: number; sinc
         price: pickPrice(p),
         stock: pickStock(p),
         updated_at: pickUpdatedAt(p),
+        image_url: pickImageUrl(p),
       });
       upserted++;
     }
