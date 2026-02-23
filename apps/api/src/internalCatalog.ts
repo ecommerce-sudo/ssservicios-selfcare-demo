@@ -2,6 +2,8 @@ import type { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import type { Secret } from "jsonwebtoken";
 
+import { listCatalogProducts } from "./catalogRepo.js";
+
 const STAFF_JWT_SECRET = process.env.STAFF_JWT_SECRET || "";
 
 function requireSeller(req: Request, res: Response, next: NextFunction) {
@@ -29,15 +31,23 @@ function requireSeller(req: Request, res: Response, next: NextFunction) {
 }
 
 export function registerInternalCatalogRoutes(app: any) {
-  app.get("/internal/catalog/products", requireSeller, (req: Request, res: Response) => {
-    const q = String(req.query.q ?? "").toLowerCase().trim();
+  app.get("/internal/catalog/products", requireSeller, async (req: Request, res: Response) => {
+    const q = String(req.query.q ?? "").trim();
 
-    let items = [
-      { id: 1, name: "Producto demo", price: 1000, stock: 10 },
-      { id: 2, name: "Otro producto", price: 2000, stock: 4 },
-    ];
+    try {
+      const rows = await listCatalogProducts(q);
 
-    if (q) items = items.filter((x) => x.name.toLowerCase().includes(q));
-    res.json(items);
+      res.json(
+        rows.map((r) => ({
+          id: Number(r.id),
+          name: r.name,
+          price: r.price ? Number(r.price) : null,
+          stock: r.stock,
+        }))
+      );
+    } catch (e: any) {
+      console.error("internal catalog list error:", e);
+      res.status(500).json({ error: "Error leyendo catálogo" });
+    }
   });
 }
