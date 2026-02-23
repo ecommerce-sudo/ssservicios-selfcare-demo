@@ -25,6 +25,8 @@ import {
   listReservationsByClient,
 } from "./reservations.js";
 import { createAriaAdditionalStrict } from "./adicional.js";
+import { staffLogin } from "./staff.js";
+import { registerInternalCatalogRoutes } from "./internalCatalog.js";
 
 dotenv.config();
 
@@ -46,6 +48,9 @@ app.use(
     allowedHeaders: ["Content-Type", "Authorization", "Idempotency-Key"],
   })
 );
+// ---------- Staff (interno) ----------
+app.post("/staff/auth/login", staffLogin);
+registerInternalCatalogRoutes(app);
 
 // ---------- Helpers ----------
 function parseMoneyLike(value: unknown): number {
