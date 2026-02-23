@@ -2,10 +2,26 @@
 import { pool } from "./db.js";
 import { tnListProducts } from "./tiendanube.js";
 
+const STORE_PUBLIC_BASE = process.env.STORE_PUBLIC_BASE || "https://ssstore.com.ar";
+
 function pickName(p: any): string {
   const n = p?.name;
   if (typeof n === "string") return n;
   return n?.es || n?.pt || n?.en || `Producto ${p?.id ?? ""}`.trim();
+}
+
+function pickHandle(p: any): string | null {
+  const h = p?.handle;
+  if (typeof h === "string") return h;
+
+  // a veces viene por idioma
+  return h?.es || h?.pt || h?.en || null;
+}
+
+function buildPublicUrl(handle: string | null): string | null {
+  if (!handle) return null;
+  // Tu tienda usa /productos/<handle>/
+  return `${STORE_PUBLIC_BASE}/productos/${handle}/`;
 }
 
 function pickPrice(p: any): number | null {
@@ -42,19 +58,32 @@ async function upsertProduct(row: {
   stock: number | null;
   updated_at: string | null;
   image_url: string | null;
+  handle: string | null;
+  public_url: string | null;
 }) {
   await pool.query(
     `
-    insert into catalog_products (id, name, price, stock, updated_at, image_url)
-    values ($1, $2, $3, $4, $5, $6)
+    insert into catalog_products (id, name, price, stock, updated_at, image_url, handle, public_url)
+    values ($1, $2, $3, $4, $5, $6, $7, $8)
     on conflict (id) do update
     set name = excluded.name,
         price = excluded.price,
         stock = excluded.stock,
         updated_at = excluded.updated_at,
-        image_url = excluded.image_url
+        image_url = excluded.image_url,
+        handle = excluded.handle,
+        public_url = excluded.public_url
     `,
-    [row.id, row.name, row.price, row.stock, row.updated_at, row.image_url]
+    [
+      row.id,
+      row.name,
+      row.price,
+      row.stock,
+      row.updated_at,
+      row.image_url,
+      row.handle,
+      row.public_url,
+    ]
   );
 }
 
@@ -75,6 +104,8 @@ export async function syncCatalogFull(): Promise<{ upserted: number }> {
     if (!products || products.length === 0) break;
 
     for (const p of products) {
+      const handle = pickHandle(p);
+
       await upsertProduct({
         id: Number(p.id),
         name: pickName(p),
@@ -82,6 +113,8 @@ export async function syncCatalogFull(): Promise<{ upserted: number }> {
         stock: pickStock(p),
         updated_at: pickUpdatedAt(p),
         image_url: pickImageUrl(p),
+        handle,
+        public_url: buildPublicUrl(handle),
       });
       upserted++;
     }
@@ -112,6 +145,8 @@ export async function syncCatalogIncremental(): Promise<{ upserted: number; sinc
     if (!products || products.length === 0) break;
 
     for (const p of products) {
+      const handle = pickHandle(p);
+
       await upsertProduct({
         id: Number(p.id),
         name: pickName(p),
@@ -119,6 +154,8 @@ export async function syncCatalogIncremental(): Promise<{ upserted: number; sinc
         stock: pickStock(p),
         updated_at: pickUpdatedAt(p),
         image_url: pickImageUrl(p),
+        handle,
+        public_url: buildPublicUrl(handle),
       });
       upserted++;
     }
