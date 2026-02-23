@@ -97,8 +97,9 @@ export default function StaffCatalogPage() {
   }, []);
 
   return (
-    <div className="bg-background-light dark:bg-background-dark font-display text-slate-900 dark:text-slate-100 antialiased">
-      <div className="relative flex min-h-screen flex-col max-w-md mx-auto bg-white dark:bg-slate-900 shadow-xl overflow-hidden">
+    <div className="bg-background-light dark:bg-background-dark font-display text-slate-900 dark:text-slate-100 antialiased min-h-screen">
+      {/* ✅ Contenedor ahora es responsive: mobile se centra, desktop se expande */}
+      <div className="relative flex min-h-screen flex-col max-w-6xl mx-auto bg-white dark:bg-slate-900 shadow-xl overflow-hidden">
         {/* Header */}
         <header className="sticky top-0 z-10 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800">
           <div className="flex items-center p-4 justify-between">
@@ -155,11 +156,12 @@ export default function StaffCatalogPage() {
               {items.length} resultados
             </p>
 
-            <div className="space-y-6">
+            {/* ✅ GRILLA: 2 columnas mobile, 4 columnas desktop */}
+            <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
               {items.map((p) => (
                 <div
                   key={p.id}
-                  className="bg-white dark:bg-slate-800 overflow-hidden border border-slate-100 dark:border-slate-700 shadow-sm rounded-3xl"
+                  className="bg-white dark:bg-slate-800 overflow-hidden border border-slate-100 dark:border-slate-700 shadow-sm rounded-3xl flex flex-col"
                 >
                   <div className="relative aspect-square w-full bg-slate-100 dark:bg-slate-700">
                     {p.image_url ? (
@@ -173,14 +175,14 @@ export default function StaffCatalogPage() {
                     ) : null}
                   </div>
 
-                  <div className="p-4">
-                    <h3 className="text-lg font-bold leading-tight mb-1 text-slate-900 dark:text-white">
+                  <div className="p-4 flex flex-col gap-3">
+                    <h3 className="text-sm lg:text-base font-bold leading-tight text-slate-900 dark:text-white line-clamp-2">
                       {p.name}
                     </h3>
 
-                    <div className="flex items-baseline gap-2 mb-3">
+                    <div className="flex items-baseline gap-2">
                       {p.price != null ? (
-                        <span className="font-bold text-primary text-2xl">${p.price}</span>
+                        <span className="font-bold text-primary text-xl">${p.price}</span>
                       ) : (
                         <span className="font-semibold text-slate-500">Sin precio</span>
                       )}
@@ -190,30 +192,28 @@ export default function StaffCatalogPage() {
                     </div>
 
                     {/* Actions */}
-                    <div className="grid grid-cols-3 gap-2 mb-4">
+                    <div className="grid grid-cols-3 gap-2">
                       <button
                         onClick={() => onWhatsApp(p)}
-                        className="flex flex-col items-center justify-center py-3 bg-slate-50 dark:bg-slate-800/50 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-700 transition-all active:scale-95"
+                        className="flex flex-col items-center justify-center py-2 bg-slate-50 dark:bg-slate-800/50 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-700 transition-all active:scale-95"
                       >
-                        <span className="material-symbols-outlined text-green-500 text-xl">chat</span>
+                        <span className="material-symbols-outlined text-green-500">chat</span>
                         <span className="text-[10px] font-medium mt-1">WhatsApp</span>
                       </button>
 
                       <button
                         onClick={() => onShare(p)}
-                        className="flex flex-col items-center justify-center py-3 bg-slate-50 dark:bg-slate-800/50 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-700 transition-all active:scale-95"
+                        className="flex flex-col items-center justify-center py-2 bg-slate-50 dark:bg-slate-800/50 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-700 transition-all active:scale-95"
                       >
-                        <span className="material-symbols-outlined text-slate-600 dark:text-slate-300 text-xl">
-                          share
-                        </span>
+                        <span className="material-symbols-outlined text-slate-600 dark:text-slate-300">share</span>
                         <span className="text-[10px] font-medium mt-1">Compartir</span>
                       </button>
 
                       <button
                         onClick={() => onCopy(p)}
-                        className="flex flex-col items-center justify-center py-3 bg-slate-50 dark:bg-slate-800/50 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-700 transition-all active:scale-95"
+                        className="flex flex-col items-center justify-center py-2 bg-slate-50 dark:bg-slate-800/50 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-700 transition-all active:scale-95"
                       >
-                        <span className="material-symbols-outlined text-slate-600 dark:text-slate-300 text-xl">
+                        <span className="material-symbols-outlined text-slate-600 dark:text-slate-300">
                           content_copy
                         </span>
                         <span className="text-[10px] font-medium mt-1">Copiar</span>
@@ -225,7 +225,7 @@ export default function StaffCatalogPage() {
                         href={p.public_url}
                         target="_blank"
                         rel="noreferrer"
-                        className="w-full bg-primary text-white font-bold py-4 rounded-2xl hover:bg-primary/90 transition-all shadow-xl shadow-primary/25 flex items-center justify-center gap-2 active:scale-[0.98]"
+                        className="w-full bg-primary text-white font-bold py-3 rounded-2xl hover:bg-primary/90 transition-all shadow-xl shadow-primary/25 flex items-center justify-center gap-2 active:scale-[0.98]"
                       >
                         <span className="material-symbols-outlined text-sm">visibility</span>
                         Ver en tienda
@@ -239,8 +239,6 @@ export default function StaffCatalogPage() {
             </div>
           </div>
         </main>
-
-        {/* Si querés nav staff propio lo agregamos acá (pero por ahora lo dejo fuera) */}
       </div>
     </div>
   );
