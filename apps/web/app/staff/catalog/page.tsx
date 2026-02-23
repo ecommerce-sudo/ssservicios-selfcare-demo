@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 type Product = {
   id: number;
@@ -35,10 +35,7 @@ export default function StaffCatalogPage() {
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const abortRef = useRef<AbortController | null>(null);
-  const debounceRef = useRef<number | null>(null);
-
-  async function fetchProducts(query: string) {
+  async function load() {
     setErr(null);
     setLoading(true);
 
@@ -49,15 +46,9 @@ export default function StaffCatalogPage() {
       const token = getCookie('staff_token');
       if (!token) throw new Error('No hay sesión staff. Volvé a /staff/login e ingresá el código.');
 
-      // cancelar request anterior si existe
-      if (abortRef.current) abortRef.current.abort();
-      const ac = new AbortController();
-      abortRef.current = ac;
-
-      const url = `${apiBase}/internal/catalog/products?q=${encodeURIComponent(query)}`;
+      const url = `${apiBase}/internal/catalog/products?q=${encodeURIComponent(q.trim())}`;
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
-        signal: ac.signal,
       });
 
       if (!res.ok) {
@@ -67,8 +58,6 @@ export default function StaffCatalogPage() {
 
       setItems(await res.json());
     } catch (e: any) {
-      // si abortamos, no mostramos error
-      if (e?.name === 'AbortError') return;
       setErr(e?.message ?? 'Error');
       setItems([]);
     } finally {
@@ -76,39 +65,15 @@ export default function StaffCatalogPage() {
     }
   }
 
-  // Carga inicial
-  useEffect(() => {
-    fetchProducts('');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Debounced search al escribir
-  useEffect(() => {
-    if (debounceRef.current) window.clearTimeout(debounceRef.current);
-
-    debounceRef.current = window.setTimeout(() => {
-      fetchProducts(q.trim());
-    }, 350);
-
-    return () => {
-      if (debounceRef.current) window.clearTimeout(debounceRef.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q]);
-
   async function onShare(p: Product) {
     const text = buildShareText(p);
 
     if (navigator.share) {
       try {
-        await navigator.share({
-          title: p.name,
-          text,
-          url: p.public_url || undefined,
-        });
+        await navigator.share({ title: p.name, text, url: p.public_url || undefined });
         return;
       } catch {
-        // cancel = no action
+        // cancel
       }
     }
 
@@ -126,118 +91,157 @@ export default function StaffCatalogPage() {
     alert('Texto copiado');
   }
 
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
-    <div style={{ padding: 16, fontFamily: 'system-ui' }}>
-      <h2 style={{ marginBottom: 8 }}>Catálogo (Staff)</h2>
-
-      <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Buscar por nombre…"
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') fetchProducts(q.trim());
-            if (e.key === 'Escape') setQ('');
-          }}
-          style={{ padding: 10, borderRadius: 8, border: '1px solid #ddd', flex: 1 }}
-        />
-        <button
-          onClick={() => fetchProducts(q.trim())}
-          disabled={loading}
-          style={{ padding: 10, borderRadius: 8, border: '1px solid #ddd' }}
-        >
-          {loading ? '...' : 'Buscar'}
-        </button>
-        <button
-          onClick={() => setQ('')}
-          disabled={loading && !q}
-          style={{ padding: 10, borderRadius: 8, border: '1px solid #ddd' }}
-        >
-          Limpiar
-        </button>
-      </div>
-
-      {err && <div style={{ color: 'crimson', marginBottom: 12 }}>{err}</div>}
-
-      <div style={{ opacity: 0.7, marginBottom: 10 }}>
-        {loading ? 'Actualizando…' : `${items.length} resultados`}
-      </div>
-
-      <ul style={{ display: 'grid', gap: 10, padding: 0, listStyle: 'none' }}>
-        {items.map((p) => (
-          <li
-            key={p.id}
-            style={{
-              border: '1px solid #eee',
-              borderRadius: 12,
-              padding: 12,
-              display: 'flex',
-              gap: 12,
-              alignItems: 'center',
-            }}
-          >
-            {p.image_url ? (
-              <img
-                src={p.image_url}
-                alt={p.name}
-                loading="lazy"
-                style={{
-                  width: 64,
-                  height: 64,
-                  objectFit: 'cover',
-                  borderRadius: 8,
-                  border: '1px solid #eee',
-                  flex: '0 0 auto',
-                }}
-              />
-            ) : (
-              <div
-                style={{
-                  width: 64,
-                  height: 64,
-                  borderRadius: 8,
-                  border: '1px solid #eee',
-                  background: '#fafafa',
-                  flex: '0 0 auto',
-                }}
-                title="Sin imagen"
-              />
-            )}
-
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={{ fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {p.name}
-              </div>
-              <div style={{ opacity: 0.8, marginTop: 4 }}>
-                ID: {p.id} {p.price != null ? `· $${p.price}` : ''} {p.stock != null ? `· Stock: ${p.stock}` : ''}
-              </div>
-
-              <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-                <button onClick={() => onWhatsApp(p)} style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #ddd' }}>
-                  WhatsApp
-                </button>
-                <button onClick={() => onShare(p)} style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #ddd' }}>
-                  Compartir
-                </button>
-                <button onClick={() => onCopy(p)} style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #ddd' }}>
-                  Copiar
-                </button>
-
-                {p.public_url && (
-                  <a
-                    href={p.public_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #ddd', textDecoration: 'none' }}
-                  >
-                    Ver en tienda
-                  </a>
-                )}
-              </div>
+    <div className="bg-background-light dark:bg-background-dark font-display text-slate-900 dark:text-slate-100 antialiased">
+      <div className="relative flex min-h-screen flex-col max-w-md mx-auto bg-white dark:bg-slate-900 shadow-xl overflow-hidden">
+        {/* Header */}
+        <header className="sticky top-0 z-10 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800">
+          <div className="flex items-center p-4 justify-between">
+            <div className="flex items-center gap-3">
+              <span className="material-symbols-outlined text-slate-700 dark:text-slate-300">sell</span>
+              <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">Catálogo (Staff)</h1>
             </div>
-          </li>
-        ))}
-      </ul>
+          </div>
+
+          {/* Search Bar */}
+          <div className="px-4 pb-4">
+            <div className="relative flex items-center">
+              <span className="material-symbols-outlined absolute left-4 text-slate-400">search</span>
+              <input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') load();
+                  if (e.key === 'Escape') setQ('');
+                }}
+                className="w-full bg-slate-100 dark:bg-slate-800 border-none rounded-full py-3 pl-12 pr-4 text-sm focus:ring-2 focus:ring-primary/30 transition-all placeholder:text-slate-500"
+                placeholder="Buscar productos..."
+                type="text"
+              />
+            </div>
+
+            <div className="mt-3 flex gap-2">
+              <button
+                onClick={load}
+                disabled={loading}
+                className="w-full bg-primary text-white font-bold py-3 rounded-2xl hover:bg-primary/90 transition-all active:scale-[0.98]"
+              >
+                {loading ? 'Buscando…' : 'Buscar'}
+              </button>
+              <button
+                onClick={() => {
+                  setQ('');
+                  setTimeout(load, 0);
+                }}
+                className="px-4 bg-slate-100 dark:bg-slate-800 rounded-2xl font-semibold text-sm hover:bg-slate-200 dark:hover:bg-slate-700 transition"
+              >
+                Limpiar
+              </button>
+            </div>
+
+            {err && <div className="mt-3 text-sm text-red-500">{err}</div>}
+          </div>
+        </header>
+
+        {/* Content */}
+        <main className="flex-1 overflow-y-auto pb-24">
+          <div className="px-4 py-4">
+            <p className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-4">
+              {items.length} resultados
+            </p>
+
+            <div className="space-y-6">
+              {items.map((p) => (
+                <div
+                  key={p.id}
+                  className="bg-white dark:bg-slate-800 overflow-hidden border border-slate-100 dark:border-slate-700 shadow-sm rounded-3xl"
+                >
+                  <div className="relative aspect-square w-full bg-slate-100 dark:bg-slate-700">
+                    {p.image_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={p.image_url}
+                        alt={p.name}
+                        className="absolute inset-0 w-full h-full object-cover"
+                        loading="lazy"
+                      />
+                    ) : null}
+                  </div>
+
+                  <div className="p-4">
+                    <h3 className="text-lg font-bold leading-tight mb-1 text-slate-900 dark:text-white">
+                      {p.name}
+                    </h3>
+
+                    <div className="flex items-baseline gap-2 mb-3">
+                      {p.price != null ? (
+                        <span className="font-bold text-primary text-2xl">${p.price}</span>
+                      ) : (
+                        <span className="font-semibold text-slate-500">Sin precio</span>
+                      )}
+                      {p.stock != null ? (
+                        <span className="text-xs text-slate-500 dark:text-slate-400">Stock: {p.stock}</span>
+                      ) : null}
+                    </div>
+
+                    {/* Actions */}
+                    <div className="grid grid-cols-3 gap-2 mb-4">
+                      <button
+                        onClick={() => onWhatsApp(p)}
+                        className="flex flex-col items-center justify-center py-3 bg-slate-50 dark:bg-slate-800/50 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-700 transition-all active:scale-95"
+                      >
+                        <span className="material-symbols-outlined text-green-500 text-xl">chat</span>
+                        <span className="text-[10px] font-medium mt-1">WhatsApp</span>
+                      </button>
+
+                      <button
+                        onClick={() => onShare(p)}
+                        className="flex flex-col items-center justify-center py-3 bg-slate-50 dark:bg-slate-800/50 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-700 transition-all active:scale-95"
+                      >
+                        <span className="material-symbols-outlined text-slate-600 dark:text-slate-300 text-xl">
+                          share
+                        </span>
+                        <span className="text-[10px] font-medium mt-1">Compartir</span>
+                      </button>
+
+                      <button
+                        onClick={() => onCopy(p)}
+                        className="flex flex-col items-center justify-center py-3 bg-slate-50 dark:bg-slate-800/50 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-700 transition-all active:scale-95"
+                      >
+                        <span className="material-symbols-outlined text-slate-600 dark:text-slate-300 text-xl">
+                          content_copy
+                        </span>
+                        <span className="text-[10px] font-medium mt-1">Copiar</span>
+                      </button>
+                    </div>
+
+                    {p.public_url ? (
+                      <a
+                        href={p.public_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="w-full bg-primary text-white font-bold py-4 rounded-2xl hover:bg-primary/90 transition-all shadow-xl shadow-primary/25 flex items-center justify-center gap-2 active:scale-[0.98]"
+                      >
+                        <span className="material-symbols-outlined text-sm">visibility</span>
+                        Ver en tienda
+                      </a>
+                    ) : (
+                      <div className="text-sm text-slate-500">Sin link público</div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </main>
+
+        {/* Si querés nav staff propio lo agregamos acá (pero por ahora lo dejo fuera) */}
+      </div>
     </div>
   );
 }
