@@ -4,7 +4,8 @@ type TNProduct = any;
 const TN_STORE_ID = process.env.TN_STORE_ID || "";
 const TN_ACCESS_TOKEN = process.env.TN_ACCESS_TOKEN || "";
 const TN_API_VERSION = process.env.TN_API_VERSION || "2025-03";
-const TN_USER_AGENT = process.env.TN_USER_AGENT || "SSServiciosSelfcare (ecommerce@ssservicios.com.ar)";
+const TN_USER_AGENT =
+  process.env.TN_USER_AGENT || "SSServiciosSelfcare (ecommerce@ssservicios.com.ar)";
 
 function assertEnv() {
   if (!TN_STORE_ID) throw new Error("TN_STORE_ID no configurado");
@@ -48,5 +49,12 @@ export async function tnListProducts(params: {
     throw new Error(`Tiendanube /products error ${res.status}: ${txt}`);
   }
 
-  return await res.json();
+  const data = (await res.json()) as unknown;
+
+  if (!Array.isArray(data)) {
+    const txt = typeof data === "string" ? data : JSON.stringify(data);
+    throw new Error(`Tiendanube /products: respuesta no es array: ${txt}`);
+  }
+
+  return data as TNProduct[];
 }
