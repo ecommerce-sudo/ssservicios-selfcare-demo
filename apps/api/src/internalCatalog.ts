@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import type { Secret } from "jsonwebtoken";
 
 import { listCatalogProducts } from "./catalogRepo.js";
+import { syncCatalogFull, syncCatalogIncremental } from "./syncCatalog.js";
 
 const STAFF_JWT_SECRET = process.env.STAFF_JWT_SECRET || "";
 
@@ -31,6 +32,7 @@ function requireSeller(req: Request, res: Response, next: NextFunction) {
 }
 
 export function registerInternalCatalogRoutes(app: any) {
+  // 1) Listado catálogo (desde DB)
   app.get("/internal/catalog/products", requireSeller, async (req: Request, res: Response) => {
     const q = String(req.query.q ?? "").trim();
 
@@ -50,4 +52,30 @@ export function registerInternalCatalogRoutes(app: any) {
       res.status(500).json({ error: "Error leyendo catálogo" });
     }
   });
+
+  // 2) Sync FULL (una vez)
+  app.post("/internal/catalog/admin/sync/full", requireSeller, async (_req: Request, res: Response) => {
+    try {
+      const result = await syncCatalogFull();
+      res.json({ ok: true, ...result });
+    } catch (e: any) {
+      console.error("sync full error:", e);
+      res.status(500).json({ ok: false, error: e?.message ?? "sync full failed" });
+    }
+  });
+
+  // 3) Sync incremental (para correr seguido)
+  app.post(
+    "/internal/catalog/admin/sync/incremental",
+    requireSeller,
+    async (_req: Request, res: Response) => {
+      try {
+        const result = await syncCatalogIncremental();
+        res.json({ ok: true, ...result });
+      } catch (e: any) {
+        console.error("sync incremental error:", e);
+        res.status(500).json({ ok: false, error: e?.message ?? "sync incremental failed" });
+      }
+    }
+  );
 }
