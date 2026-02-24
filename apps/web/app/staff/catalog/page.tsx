@@ -44,7 +44,7 @@ export default function StaffCatalogPage() {
       if (!apiBase) throw new Error('Falta configurar NEXT_PUBLIC_API_BASE_URL en Vercel.');
 
       const token = getCookie('staff_token');
-      if (!token) throw new Error('No hay sesión staff. Volvé a /staff/login e ingresá el código.');
+      if (!token) throw new Error('No hay sesión staff. Volvé a /staff/login.');
 
       const url = `${apiBase}/internal/catalog/products?q=${encodeURIComponent(q.trim())}`;
       const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
@@ -97,7 +97,6 @@ export default function StaffCatalogPage() {
   return (
     <div className="bg-background-light dark:bg-background-dark font-display text-slate-900 dark:text-slate-100 antialiased min-h-screen">
       <div className="relative flex min-h-screen flex-col max-w-6xl mx-auto bg-white dark:bg-slate-900 shadow-xl overflow-hidden">
-        {/* Header */}
         <header className="sticky top-0 z-10 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800">
           <div className="flex items-center p-4 justify-between">
             <div className="flex items-center gap-3">
@@ -106,7 +105,6 @@ export default function StaffCatalogPage() {
             </div>
           </div>
 
-          {/* Search Bar */}
           <div className="px-4 pb-4">
             <div className="relative flex items-center">
               <span className="material-symbols-outlined absolute left-4 text-slate-400">search</span>
@@ -146,19 +144,15 @@ export default function StaffCatalogPage() {
           </div>
         </header>
 
-        {/* Content */}
         <main className="flex-1 overflow-y-auto pb-24">
           <div className="px-4 py-4">
-            <p className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-4">
-              {items.length} resultados
-            </p>
+            <p className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-4">{items.length} resultados</p>
 
-            {/* Grid: 2 cols mobile, 4 cols desktop */}
             <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
               {items.map((p) => (
                 <div
                   key={p.id}
-                  className="bg-white dark:bg-slate-800 overflow-hidden border border-slate-100 dark:border-slate-700 shadow-sm rounded-3xl flex flex-col"
+                  className="bg-white dark:bg-slate-800 overflow-hidden border border-slate-100 dark:border-slate-700 shadow-sm rounded-3xl flex flex-col h-full"
                 >
                   <div className="relative aspect-square w-full bg-slate-100 dark:bg-slate-700">
                     {p.image_url ? (
@@ -172,66 +166,68 @@ export default function StaffCatalogPage() {
                     ) : null}
                   </div>
 
-                  <div className="p-4 flex flex-col gap-3">
+                  <div className="p-4 flex flex-col gap-3 flex-1">
                     <h3 className="text-sm lg:text-base font-bold leading-tight text-slate-900 dark:text-white line-clamp-2">
                       {p.name}
                     </h3>
 
                     <div className="flex items-baseline gap-2">
-                      {p.price != null ? (
-                        <span className="font-bold text-primary text-xl">${p.price}</span>
-                      ) : (
-                        <span className="font-semibold text-slate-500">Sin precio</span>
-                      )}
+                      {p.price != null ? <span className="font-bold text-primary text-xl">${p.price}</span> : null}
                       {p.stock != null ? (
-                        <span className="text-xs text-slate-500 dark:text-slate-400">Stock: {p.stock}</span>
+                        <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                          Stock: {p.stock}
+                        </span>
                       ) : null}
                     </div>
 
-                    {/* Actions: mobile 2 cols + copiar full row, desktop 3 cols */}
+                    {/* ✅ Acciones: compacto, sin wrap, y desktop 3 columnas reales */}
                     <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
                       <button
                         onClick={() => onWhatsApp(p)}
-                        className="flex items-center justify-center gap-2 py-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-700 transition-all active:scale-95"
+                        className="h-11 lg:h-10 flex items-center justify-center gap-2 bg-slate-50 dark:bg-slate-800/50 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-700 transition active:scale-95"
                       >
                         <span className="material-symbols-outlined text-green-500 text-[20px]">chat</span>
-                        <span className="text-xs font-semibold">WhatsApp</span>
+                        <span className="text-xs font-semibold whitespace-nowrap">WhatsApp</span>
                       </button>
 
                       <button
                         onClick={() => onShare(p)}
-                        className="flex items-center justify-center gap-2 py-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-700 transition-all active:scale-95"
+                        className="h-11 lg:h-10 flex items-center justify-center gap-2 bg-slate-50 dark:bg-slate-800/50 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-700 transition active:scale-95"
                       >
                         <span className="material-symbols-outlined text-slate-600 dark:text-slate-300 text-[20px]">
                           share
                         </span>
-                        <span className="text-xs font-semibold">Compartir</span>
+                        <span className="text-xs font-semibold whitespace-nowrap">Compartir</span>
                       </button>
 
+                      {/* Mobile: ocupa 2 cols para no apretar. Desktop: vuelve a 1 col */}
                       <button
                         onClick={() => onCopy(p)}
-                        className="col-span-2 lg:col-span-1 flex items-center justify-center gap-2 py-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-700 transition-all active:scale-95"
+                        className="col-span-2 lg:col-span-1 h-11 lg:h-10 flex items-center justify-center gap-2 bg-slate-50 dark:bg-slate-800/50 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-700 transition active:scale-95"
                       >
                         <span className="material-symbols-outlined text-slate-600 dark:text-slate-300 text-[20px]">
                           content_copy
                         </span>
-                        <span className="text-xs font-semibold">Copiar</span>
+                        <span className="text-xs font-semibold whitespace-nowrap">Copiar</span>
                       </button>
                     </div>
 
-                    {p.public_url ? (
-                      <a
-                        href={p.public_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="w-full bg-primary text-white font-bold py-2.5 lg:py-3 rounded-2xl hover:bg-primary/90 transition-all shadow-xl shadow-primary/25 flex items-center justify-center gap-2 active:scale-[0.98]"
-                      >
-                        <span className="material-symbols-outlined text-sm">visibility</span>
-                        <span className="text-sm font-bold">Ver en tienda</span>
-                      </a>
-                    ) : (
-                      <div className="text-sm text-slate-500">Sin link público</div>
-                    )}
+                    {/* CTA al fondo para que todas las cards queden parejas */}
+                    <div className="mt-auto">
+                      {p.public_url ? (
+                        <a
+                          href={p.public_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="w-full bg-primary text-white font-bold py-2.5 rounded-2xl hover:bg-primary/90 transition shadow-xl shadow-primary/25 flex items-center justify-center gap-2 active:scale-[0.98]"
+                        >
+                          <span className="material-symbols-outlined text-sm">visibility</span>
+                          <span className="text-sm font-bold whitespace-nowrap">Ver en tienda</span>
+                        </a>
+                      ) : (
+                        <div className="text-sm text-slate-500">Sin link público</div>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
