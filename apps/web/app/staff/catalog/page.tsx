@@ -18,15 +18,11 @@ function getCookie(name: string): string | null {
   return decodeURIComponent(found.substring(name.length + 1));
 }
 
-function buildShareText(p: Product) {
+function buildWhatsAppText(p: Product) {
   const price = p.price != null ? `💰 $${p.price}` : '';
   const stock = p.stock != null ? `📦 Stock: ${p.stock}` : '';
   const link = p.public_url ? `🔗 ${p.public_url}` : '';
   return [`🛒 ${p.name}`, price, stock, link].filter(Boolean).join('\n');
-}
-
-async function copyToClipboard(text: string) {
-  await navigator.clipboard.writeText(text);
 }
 
 export default function StaffCatalogPage() {
@@ -63,28 +59,9 @@ export default function StaffCatalogPage() {
     }
   }
 
-  async function onShare(p: Product) {
-    const text = buildShareText(p);
-
-    if (navigator.share) {
-      try {
-        await navigator.share({ title: p.name, text, url: p.public_url || undefined });
-        return;
-      } catch {}
-    }
-
-    await copyToClipboard(text);
-    alert('Texto copiado');
-  }
-
   function onWhatsApp(p: Product) {
-    const text = encodeURIComponent(buildShareText(p));
+    const text = encodeURIComponent(buildWhatsAppText(p));
     window.open(`https://wa.me/?text=${text}`, '_blank', 'noopener,noreferrer');
-  }
-
-  async function onCopy(p: Product) {
-    await copyToClipboard(buildShareText(p));
-    alert('Texto copiado');
   }
 
   useEffect(() => {
@@ -92,7 +69,7 @@ export default function StaffCatalogPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ✅ clase base para que ningún CSS global te pise el botón
+  // fuerza a ganarle a CSS global del sitio (bordes/outline)
   const btnBase =
     'appearance-none !border-0 !outline-none !shadow-none ring-0 focus:ring-0 active:scale-95 transition';
 
@@ -152,7 +129,6 @@ export default function StaffCatalogPage() {
           <div className="px-4 py-4">
             <p className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-4">{items.length} resultados</p>
 
-            {/* 2 cols mobile / 4 cols desktop */}
             <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
               {items.map((p) => (
                 <div
@@ -178,39 +154,15 @@ export default function StaffCatalogPage() {
                       ) : null}
                     </div>
 
-                    {/* ✅ Acciones: mobile 2 + copiar full, desktop 3 */}
-                    <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
-                      <button
-                        type="button"
-                        onClick={() => onWhatsApp(p)}
-                        className={`${btnBase} h-10 flex items-center justify-center gap-2 !bg-slate-100 dark:!bg-slate-800 rounded-2xl`}
-                      >
-                        <span className="material-symbols-outlined text-green-600 text-[20px]">chat</span>
-                        <span className="text-xs font-semibold whitespace-nowrap">WhatsApp</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => onShare(p)}
-                        className={`${btnBase} h-10 flex items-center justify-center gap-2 !bg-slate-100 dark:!bg-slate-800 rounded-2xl`}
-                      >
-                        <span className="material-symbols-outlined text-slate-700 dark:text-slate-200 text-[20px]">
-                          share
-                        </span>
-                        <span className="text-xs font-semibold whitespace-nowrap">Compartir</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => onCopy(p)}
-                        className={`${btnBase} col-span-2 lg:col-span-1 h-10 flex items-center justify-center gap-2 !bg-slate-100 dark:!bg-slate-800 rounded-2xl`}
-                      >
-                        <span className="material-symbols-outlined text-slate-700 dark:text-slate-200 text-[20px]">
-                          content_copy
-                        </span>
-                        <span className="text-xs font-semibold whitespace-nowrap">Copiar</span>
-                      </button>
-                    </div>
+                    {/* SOLO WhatsApp */}
+                    <button
+                      type="button"
+                      onClick={() => onWhatsApp(p)}
+                      className={`${btnBase} h-11 flex items-center justify-center gap-2 !bg-slate-100 dark:!bg-slate-800 rounded-2xl`}
+                    >
+                      <span className="material-symbols-outlined text-green-600 text-[20px]">chat</span>
+                      <span className="text-sm font-bold whitespace-nowrap">WhatsApp</span>
+                    </button>
 
                     <div className="mt-auto">
                       {p.public_url ? (
