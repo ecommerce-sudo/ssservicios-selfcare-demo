@@ -70,9 +70,7 @@ export default function StaffCatalogPage() {
       try {
         await navigator.share({ title: p.name, text, url: p.public_url || undefined });
         return;
-      } catch {
-        // cancel
-      }
+      } catch {}
     }
 
     await copyToClipboard(text);
@@ -93,6 +91,10 @@ export default function StaffCatalogPage() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ✅ clase base para que ningún CSS global te pise el botón
+  const btnBase =
+    'appearance-none !border-0 !outline-none !shadow-none ring-0 focus:ring-0 active:scale-95 transition';
 
   return (
     <div className="bg-background-light dark:bg-background-dark font-display text-slate-900 dark:text-slate-100 antialiased min-h-screen">
@@ -123,18 +125,20 @@ export default function StaffCatalogPage() {
 
             <div className="mt-3 flex gap-2">
               <button
+                type="button"
                 onClick={load}
                 disabled={loading}
-                className="w-full bg-primary text-white font-bold py-3 rounded-2xl hover:bg-primary/90 transition-all active:scale-[0.98]"
+                className={`${btnBase} w-full !bg-primary text-white font-bold py-3 rounded-2xl hover:opacity-95`}
               >
                 {loading ? 'Buscando…' : 'Buscar'}
               </button>
               <button
+                type="button"
                 onClick={() => {
                   setQ('');
                   setTimeout(load, 0);
                 }}
-                className="px-4 bg-slate-100 dark:bg-slate-800 rounded-2xl font-semibold text-sm hover:bg-slate-200 dark:hover:bg-slate-700 transition"
+                className={`${btnBase} px-4 !bg-slate-100 dark:!bg-slate-800 rounded-2xl font-semibold text-sm hover:opacity-90`}
               >
                 Limpiar
               </button>
@@ -148,6 +152,7 @@ export default function StaffCatalogPage() {
           <div className="px-4 py-4">
             <p className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-4">{items.length} resultados</p>
 
+            {/* 2 cols mobile / 4 cols desktop */}
             <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
               {items.map((p) => (
                 <div
@@ -157,12 +162,7 @@ export default function StaffCatalogPage() {
                   <div className="relative aspect-square w-full bg-slate-100 dark:bg-slate-700">
                     {p.image_url ? (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={p.image_url}
-                        alt={p.name}
-                        className="absolute inset-0 w-full h-full object-cover"
-                        loading="lazy"
-                      />
+                      <img src={p.image_url} alt={p.name} className="absolute inset-0 w-full h-full object-cover" />
                     ) : null}
                   </div>
 
@@ -174,52 +174,51 @@ export default function StaffCatalogPage() {
                     <div className="flex items-baseline gap-2">
                       {p.price != null ? <span className="font-bold text-primary text-xl">${p.price}</span> : null}
                       {p.stock != null ? (
-                        <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
-                          Stock: {p.stock}
-                        </span>
+                        <span className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">Stock: {p.stock}</span>
                       ) : null}
                     </div>
 
-                    {/* ✅ Acciones: compacto, sin wrap, y desktop 3 columnas reales */}
+                    {/* ✅ Acciones: mobile 2 + copiar full, desktop 3 */}
                     <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
                       <button
+                        type="button"
                         onClick={() => onWhatsApp(p)}
-                        className="h-11 lg:h-10 flex items-center justify-center gap-2 bg-slate-50 dark:bg-slate-800/50 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-700 transition active:scale-95"
+                        className={`${btnBase} h-10 flex items-center justify-center gap-2 !bg-slate-100 dark:!bg-slate-800 rounded-2xl`}
                       >
-                        <span className="material-symbols-outlined text-green-500 text-[20px]">chat</span>
+                        <span className="material-symbols-outlined text-green-600 text-[20px]">chat</span>
                         <span className="text-xs font-semibold whitespace-nowrap">WhatsApp</span>
                       </button>
 
                       <button
+                        type="button"
                         onClick={() => onShare(p)}
-                        className="h-11 lg:h-10 flex items-center justify-center gap-2 bg-slate-50 dark:bg-slate-800/50 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-700 transition active:scale-95"
+                        className={`${btnBase} h-10 flex items-center justify-center gap-2 !bg-slate-100 dark:!bg-slate-800 rounded-2xl`}
                       >
-                        <span className="material-symbols-outlined text-slate-600 dark:text-slate-300 text-[20px]">
+                        <span className="material-symbols-outlined text-slate-700 dark:text-slate-200 text-[20px]">
                           share
                         </span>
                         <span className="text-xs font-semibold whitespace-nowrap">Compartir</span>
                       </button>
 
-                      {/* Mobile: ocupa 2 cols para no apretar. Desktop: vuelve a 1 col */}
                       <button
+                        type="button"
                         onClick={() => onCopy(p)}
-                        className="col-span-2 lg:col-span-1 h-11 lg:h-10 flex items-center justify-center gap-2 bg-slate-50 dark:bg-slate-800/50 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-700 transition active:scale-95"
+                        className={`${btnBase} col-span-2 lg:col-span-1 h-10 flex items-center justify-center gap-2 !bg-slate-100 dark:!bg-slate-800 rounded-2xl`}
                       >
-                        <span className="material-symbols-outlined text-slate-600 dark:text-slate-300 text-[20px]">
+                        <span className="material-symbols-outlined text-slate-700 dark:text-slate-200 text-[20px]">
                           content_copy
                         </span>
                         <span className="text-xs font-semibold whitespace-nowrap">Copiar</span>
                       </button>
                     </div>
 
-                    {/* CTA al fondo para que todas las cards queden parejas */}
                     <div className="mt-auto">
                       {p.public_url ? (
                         <a
                           href={p.public_url}
                           target="_blank"
                           rel="noreferrer"
-                          className="w-full bg-primary text-white font-bold py-2.5 rounded-2xl hover:bg-primary/90 transition shadow-xl shadow-primary/25 flex items-center justify-center gap-2 active:scale-[0.98]"
+                          className="w-full !bg-primary text-white font-bold py-2.5 rounded-2xl flex items-center justify-center gap-2 hover:opacity-95"
                         >
                           <span className="material-symbols-outlined text-sm">visibility</span>
                           <span className="text-sm font-bold whitespace-nowrap">Ver en tienda</span>
