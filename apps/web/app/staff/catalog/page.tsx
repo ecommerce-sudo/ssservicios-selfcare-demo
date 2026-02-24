@@ -47,9 +47,7 @@ export default function StaffCatalogPage() {
       if (!token) throw new Error('No hay sesión staff. Volvé a /staff/login e ingresá el código.');
 
       const url = `${apiBase}/internal/catalog/products?q=${encodeURIComponent(q.trim())}`;
-      const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
 
       if (!res.ok) {
         const t = await res.text();
@@ -98,7 +96,6 @@ export default function StaffCatalogPage() {
 
   return (
     <div className="bg-background-light dark:bg-background-dark font-display text-slate-900 dark:text-slate-100 antialiased min-h-screen">
-      {/* ✅ Contenedor ahora es responsive: mobile se centra, desktop se expande */}
       <div className="relative flex min-h-screen flex-col max-w-6xl mx-auto bg-white dark:bg-slate-900 shadow-xl overflow-hidden">
         {/* Header */}
         <header className="sticky top-0 z-10 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800">
@@ -156,7 +153,7 @@ export default function StaffCatalogPage() {
               {items.length} resultados
             </p>
 
-            {/* ✅ GRILLA: 2 columnas mobile, 4 columnas desktop */}
+            {/* Grid: 2 cols mobile, 4 cols desktop */}
             <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
               {items.map((p) => (
                 <div
@@ -191,32 +188,34 @@ export default function StaffCatalogPage() {
                       ) : null}
                     </div>
 
-                    {/* Actions */}
-                    <div className="grid grid-cols-3 gap-2">
+                    {/* Actions: mobile 2 cols + copiar full row, desktop 3 cols */}
+                    <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
                       <button
                         onClick={() => onWhatsApp(p)}
-                        className="flex flex-col items-center justify-center py-2 bg-slate-50 dark:bg-slate-800/50 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-700 transition-all active:scale-95"
+                        className="flex items-center justify-center gap-2 py-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-700 transition-all active:scale-95"
                       >
-                        <span className="material-symbols-outlined text-green-500">chat</span>
-                        <span className="text-[10px] font-medium mt-1">WhatsApp</span>
+                        <span className="material-symbols-outlined text-green-500 text-[20px]">chat</span>
+                        <span className="text-xs font-semibold">WhatsApp</span>
                       </button>
 
                       <button
                         onClick={() => onShare(p)}
-                        className="flex flex-col items-center justify-center py-2 bg-slate-50 dark:bg-slate-800/50 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-700 transition-all active:scale-95"
+                        className="flex items-center justify-center gap-2 py-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-700 transition-all active:scale-95"
                       >
-                        <span className="material-symbols-outlined text-slate-600 dark:text-slate-300">share</span>
-                        <span className="text-[10px] font-medium mt-1">Compartir</span>
+                        <span className="material-symbols-outlined text-slate-600 dark:text-slate-300 text-[20px]">
+                          share
+                        </span>
+                        <span className="text-xs font-semibold">Compartir</span>
                       </button>
 
                       <button
                         onClick={() => onCopy(p)}
-                        className="flex flex-col items-center justify-center py-2 bg-slate-50 dark:bg-slate-800/50 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-700 transition-all active:scale-95"
+                        className="col-span-2 lg:col-span-1 flex items-center justify-center gap-2 py-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-700 transition-all active:scale-95"
                       >
-                        <span className="material-symbols-outlined text-slate-600 dark:text-slate-300">
+                        <span className="material-symbols-outlined text-slate-600 dark:text-slate-300 text-[20px]">
                           content_copy
                         </span>
-                        <span className="text-[10px] font-medium mt-1">Copiar</span>
+                        <span className="text-xs font-semibold">Copiar</span>
                       </button>
                     </div>
 
@@ -225,10 +224,10 @@ export default function StaffCatalogPage() {
                         href={p.public_url}
                         target="_blank"
                         rel="noreferrer"
-                        className="w-full bg-primary text-white font-bold py-3 rounded-2xl hover:bg-primary/90 transition-all shadow-xl shadow-primary/25 flex items-center justify-center gap-2 active:scale-[0.98]"
+                        className="w-full bg-primary text-white font-bold py-2.5 lg:py-3 rounded-2xl hover:bg-primary/90 transition-all shadow-xl shadow-primary/25 flex items-center justify-center gap-2 active:scale-[0.98]"
                       >
                         <span className="material-symbols-outlined text-sm">visibility</span>
-                        Ver en tienda
+                        <span className="text-sm font-bold">Ver en tienda</span>
                       </a>
                     ) : (
                       <div className="text-sm text-slate-500">Sin link público</div>
