@@ -1,3 +1,4 @@
+// apps/api/src/index.ts
 import dotenv from "dotenv";
 import { createApp } from "./app.js";
 
@@ -22,6 +23,7 @@ import {
   setReservationStatus,
   listReservationsByClient,
 } from "./reservations.js";
+
 import { createAriaAdditionalStrict } from "./adicional.js";
 import { staffLogin } from "./staff.js";
 import { registerInternalCatalogRoutes } from "./internalCatalog.js";
@@ -32,8 +34,7 @@ dotenv.config();
 // Más adelante lo cambiamos por login real / token.
 const DEMO_CLIENT_ID = 66489;
 
-const app = express();
-
+// ✅ Express bootstrap centralizado en app.ts
 const app = createApp();
 
 // ---------- Staff (interno) ----------
