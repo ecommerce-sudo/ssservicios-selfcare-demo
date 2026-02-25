@@ -12,23 +12,33 @@ declare global {
 type Options = {
   demoClientId: number;
   headerName?: string; // default: "x-client-id"
+  strictWhenProvided?: boolean; // default: true
 };
 
 export function withClientContext(opts: Options) {
   const headerName = (opts.headerName ?? "x-client-id").toLowerCase();
+  const strict = opts.strictWhenProvided ?? true;
 
-  return function clientContext(req: Request, _res: Response, next: NextFunction) {
+  return function clientContext(req: Request, res: Response, next: NextFunction) {
     const raw = String(req.headers[headerName] ?? "").trim();
 
-    // Si no viene header, usamos demo
+    // Si no viene header, usamos demo (modo demo-friendly)
     if (!raw) {
       req.clientId = Number(opts.demoClientId);
       return next();
     }
 
-    // Validación simple (numérico)
+    // Si viene header pero es inválido
     if (!/^\d+$/.test(raw)) {
-      // No cortamos el request para no romper demo; caemos a demo
+      if (strict) {
+        return res.status(400).json({
+          ok: false,
+          error: "INVALID_CLIENT_ID_HEADER",
+          detail: `Header ${headerName} debe ser numérico`,
+        });
+      }
+
+      // fallback demo (por si algún día querés desactivar strict)
       req.clientId = Number(opts.demoClientId);
       return next();
     }
