@@ -25,6 +25,8 @@ import { registerStaffRoutes } from "./routes/staff.js";
 import { registerMeInvoicesRoutes } from "./routes/meInvoices.js";
 import { registerMeServicesRoutes } from "./routes/meServices.js";
 
+import { withClientContext } from "./middleware/clientContext.js";
+
 dotenv.config();
 
 // Demo auth: por ahora fijamos clientId=66489.
@@ -33,6 +35,9 @@ const DEMO_CLIENT_ID = 66489;
 
 // ✅ Express bootstrap centralizado en app.ts
 const app = createApp();
+
+// ✅ Contexto de cliente (header X-Client-Id o fallback demo)
+app.use(withClientContext({ demoClientId: DEMO_CLIENT_ID }));
 
 // ---------- Staff (interno) ----------
 registerStaffRoutes(app);
@@ -68,23 +73,20 @@ app.get("/health", (_req, res) => {
 });
 
 // ---------- Perfil + cupo ----------
-app.get("/v1/me", async (_req, res) => {
+app.get("/v1/me", async (req, res) => {
   try {
-    const c = await anatodGetClienteById(DEMO_CLIENT_ID);
+    const clientId = Number(req.clientId ?? DEMO_CLIENT_ID);
 
-    // Reservas pendientes (Neon): solo ACTIVE
-    const reserved = await sumActiveReservations(Number(DEMO_CLIENT_ID));
+    const c = await anatodGetClienteById(clientId);
+
+    const reserved = await sumActiveReservations(clientId);
 
     const official = c.financiable;
     const available = Math.max(official - reserved, 0);
 
     res.json({
-      clientId: Number(DEMO_CLIENT_ID),
-
-      // ✅ ID real de Anatod (facturas / cuenta corriente)
-      // Importante: NO exponemos PII; solo el identificador técnico.
+      clientId,
       anatodClientId: Number(c.clienteId),
-
       name: c.fullName || "Cliente",
       purchaseAvailableOfficial: official,
       purchaseAvailableReserved: reserved,
@@ -103,9 +105,11 @@ app.get("/v1/me", async (_req, res) => {
 });
 
 // ---------- ESTADO DE CUENTA (Account Status) ----------
-app.get("/v1/me/account", async (_req, res) => {
+app.get("/v1/me/account", async (req, res) => {
   try {
-    const c = await anatodGetClienteById(DEMO_CLIENT_ID);
+    const clientId = Number(req.clientId ?? DEMO_CLIENT_ID);
+
+    const c = await anatodGetClienteById(clientId);
     const raw: any = (c as any).raw ?? {};
 
     const saldo = parseMoneyLike(raw.cliente_saldo);
@@ -124,7 +128,7 @@ app.get("/v1/me/account", async (_req, res) => {
           : "AL_DIA";
 
     res.json({
-      clientId: Number(DEMO_CLIENT_ID),
+      clientId,
       anatodClientId: Number(c.clienteId),
 
       status,
@@ -153,6 +157,8 @@ app.get("/v1/me/account", async (_req, res) => {
 // ---------- Reservas ----------
 app.get("/v1/me/reservations/demo-add", async (req, res) => {
   try {
+    const clientId = Number(req.clientId ?? DEMO_CLIENT_ID);
+
     const amountRaw = String(req.query.amount ?? "").trim();
     const amount = Number(amountRaw);
 
@@ -164,7 +170,7 @@ app.get("/v1/me/reservations/demo-add", async (req, res) => {
 
     const row = await createReservation({
       id,
-      clientId: Number(DEMO_CLIENT_ID),
+      clientId,
       amount,
       status: "ACTIVE",
     });
@@ -191,10 +197,11 @@ app.get("/v1/me/reservations/demo-release", async (req, res) => {
   }
 });
 
-app.get("/v1/me/reservations", async (_req, res) => {
+app.get("/v1/me/reservations", async (req, res) => {
   try {
-    const rows = await listReservationsByClient(Number(DEMO_CLIENT_ID));
-    res.json({ clientId: Number(DEMO_CLIENT_ID), reservations: rows });
+    const clientId = Number(req.clientId ?? DEMO_CLIENT_ID);
+    const rows = await listReservationsByClient(clientId);
+    res.json({ clientId, reservations: rows });
   } catch (err: any) {
     console.error(err);
     res.status(500).json({
@@ -208,6 +215,8 @@ app.get("/v1/me/reservations", async (_req, res) => {
 // ---------- Compra financiada ----------
 app.get("/v1/me/purchase/financed", async (req, res) => {
   try {
+    const clientId = Number(req.clientId ?? DEMO_CLIENT_ID);
+
     const amountRaw = String(req.query.amount ?? "").trim();
     const descRaw = String(req.query.desc ?? "").trim();
 
@@ -218,14 +227,12 @@ app.get("/v1/me/purchase/financed", async (req, res) => {
       return res.status(400).json({ ok: false, error: "INVALID_AMOUNT" });
     }
 
-    // 1) Cupo oficial (anatod) + 2) Reservas activas (Neon)
-    const c = await anatodGetClienteById(DEMO_CLIENT_ID);
-    const reserved = await sumActiveReservations(Number(DEMO_CLIENT_ID));
+    const c = await anatodGetClienteById(clientId);
+    const reserved = await sumActiveReservations(clientId);
 
     const official = c.financiable;
     const available = Math.max(official - reserved, 0);
 
-    // 3) Validación de cupo
     if (amount > available) {
       return res.status(409).json({
         ok: false,
@@ -237,11 +244,10 @@ app.get("/v1/me/purchase/financed", async (req, res) => {
       });
     }
 
-    // 4) Crear Order en Neon
     const orderId = `ord_${Date.now()}`;
     const order = await createOrder({
       id: orderId,
-      clientId: DEMO_CLIENT_ID,
+      clientId,
       type: "BUY_FINANCED",
       status: "PENDIENTE",
       conexionId: null,
@@ -254,11 +260,10 @@ app.get("/v1/me/purchase/financed", async (req, res) => {
       description,
     });
 
-    // 5) Crear Reserva en Neon por el total
     const reservationId = `res_${Date.now()}`;
     const reservation = await createReservation({
       id: reservationId,
-      clientId: Number(DEMO_CLIENT_ID),
+      clientId,
       orderId,
       amount,
       status: "ACTIVE",
@@ -269,12 +274,10 @@ app.get("/v1/me/purchase/financed", async (req, res) => {
       amount,
     });
 
-    // 6) Calcular cuota (3 meses)
     const installment = Math.round((amount / 3) * 100) / 100;
 
-    // 7) Crear adicional real en anatod
     const adicionalRes = await createAriaAdditionalStrict({
-      clientId: DEMO_CLIENT_ID,
+      clientId,
       installmentValue: installment,
       description,
     });
@@ -286,7 +289,6 @@ app.get("/v1/me/purchase/financed", async (req, res) => {
         status: adicionalRes.status,
       });
 
-      // 8) Consumir reserva (ya se creó el adicional OK)
       const consumed = await setReservationStatus(reservationId, "CONSUMED");
 
       await addOrderEvent(orderId, "RESERVATION_CONSUMED", {
@@ -294,7 +296,6 @@ app.get("/v1/me/purchase/financed", async (req, res) => {
         status: consumed?.status ?? "CONSUMED",
       });
 
-      // 9) Estado final de orden
       await setOrderStatus(orderId, "APLICADO");
       await addOrderEvent(orderId, "STATUS_UPDATED", { status: "APLICADO" });
 
@@ -307,7 +308,6 @@ app.get("/v1/me/purchase/financed", async (req, res) => {
       });
     }
 
-    // Si falla el adicional: dejamos reserva ACTIVE y orden EN_PROCESO
     await addOrderEvent(orderId, "ADICIONAL_FAILED", {
       status: adicionalRes.status,
       body: adicionalRes.bodyText.slice(0, 500),
@@ -341,11 +341,13 @@ app.get("/v1/me/purchase/financed", async (req, res) => {
 // ---------- Órdenes ----------
 app.get("/v1/me/orders/demo-create", async (req, res) => {
   try {
+    const clientId = Number(req.clientId ?? DEMO_CLIENT_ID);
+
     const orderId = `ord_${Date.now()}`;
 
     const order = await createOrder({
       id: orderId,
-      clientId: DEMO_CLIENT_ID,
+      clientId,
       type: "UPGRADE_INTERNET",
       status: "PENDIENTE",
       conexionId: null,
@@ -361,19 +363,22 @@ app.get("/v1/me/orders/demo-create", async (req, res) => {
   }
 });
 
-app.get("/v1/me/orders", async (_req, res) => {
+app.get("/v1/me/orders", async (req, res) => {
   try {
-    const orders = await listOrdersByClient(DEMO_CLIENT_ID);
-    res.json({ clientId: Number(DEMO_CLIENT_ID), orders });
+    const clientId = Number(req.clientId ?? DEMO_CLIENT_ID);
+    const orders = await listOrdersByClient(clientId);
+    res.json({ clientId, orders });
   } catch (err: any) {
     console.error(err);
     res.status(500).json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
   }
 });
 
-app.get("/v1/me/orders/reconcile", async (_req, res) => {
+app.get("/v1/me/orders/reconcile", async (req, res) => {
   try {
-    const pending = await listPendingBuyFinancedByClient(Number(DEMO_CLIENT_ID));
+    const clientId = Number(req.clientId ?? DEMO_CLIENT_ID);
+
+    const pending = await listPendingBuyFinancedByClient(clientId);
 
     let updatedToApplied = 0;
     let updatedToInProcess = 0;
@@ -427,7 +432,7 @@ app.get("/v1/me/orders/reconcile", async (_req, res) => {
 
     res.json({
       ok: true,
-      clientId: Number(DEMO_CLIENT_ID),
+      clientId,
       scanned: pending.length,
       updatedToApplied,
       updatedToInProcess,
@@ -447,10 +452,12 @@ app.get("/v1/me/orders/reconcile", async (_req, res) => {
 
 app.post("/v1/me/orders/demo", async (req, res) => {
   try {
+    const clientId = Number(req.clientId ?? DEMO_CLIENT_ID);
+
     const orderId = `ord_${Date.now()}`;
     const order = await createOrder({
       id: orderId,
-      clientId: DEMO_CLIENT_ID,
+      clientId,
       type: "UPGRADE_INTERNET",
       status: "PENDIENTE",
       conexionId: null,
