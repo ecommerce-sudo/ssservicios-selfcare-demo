@@ -12,28 +12,18 @@ import {
 } from "./orders.js";
 
 import {
-  anatodGetClienteById,
-  anatodListFacturasByCliente,
-  mapFacturaToDTO,
-} from "./anatod.js";
-
-import {
   sumActiveReservations,
   createReservation,
   setReservationStatus,
   listReservationsByClient,
 } from "./reservations.js";
 
+import { anatodGetClienteById } from "./anatod.js";
 import { createAriaAdditionalStrict } from "./adicional.js";
+
 import { registerStaffRoutes } from "./routes/staff.js";
 import { registerMeInvoicesRoutes } from "./routes/meInvoices.js";
-
-import {
-  anatodListConexionesInternetByCliente,
-  anatodListConexionesTelefoniaByCliente,
-  anatodListConexionesTelevisionByCliente,
-  mapConexionToServiceDTO,
-} from "./integrations/anatodClient.js";
+import { registerMeServicesRoutes } from "./routes/meServices.js";
 
 dotenv.config();
 
@@ -49,6 +39,9 @@ registerStaffRoutes(app);
 
 // ---------- Invoices ----------
 registerMeInvoicesRoutes(app, { demoClientId: DEMO_CLIENT_ID });
+
+// ---------- Services ----------
+registerMeServicesRoutes(app, { demoClientId: DEMO_CLIENT_ID });
 
 // ---------- Helpers ----------
 function parseMoneyLike(value: unknown): number {
@@ -79,6 +72,7 @@ app.get("/v1/me", async (_req, res) => {
   try {
     const c = await anatodGetClienteById(DEMO_CLIENT_ID);
 
+    // Reservas pendientes (Neon): solo ACTIVE
     const reserved = await sumActiveReservations(Number(DEMO_CLIENT_ID));
 
     const official = c.financiable;
@@ -86,7 +80,11 @@ app.get("/v1/me", async (_req, res) => {
 
     res.json({
       clientId: Number(DEMO_CLIENT_ID),
+
+      // ✅ ID real de Anatod (facturas / cuenta corriente)
+      // Importante: NO exponemos PII; solo el identificador técnico.
       anatodClientId: Number(c.clienteId),
+
       name: c.fullName || "Cliente",
       purchaseAvailableOfficial: official,
       purchaseAvailableReserved: reserved,
@@ -99,86 +97,6 @@ app.get("/v1/me", async (_req, res) => {
     res.status(502).json({
       ok: false,
       error: "ANATOD_ERROR",
-      detail: String(err?.message ?? err),
-    });
-  }
-});
-
-// ---------- Servicios (REAL: Internet + Telefonía + TV, best-effort) ----------
-app.get("/v1/me/services", async (_req, res) => {
-  try {
-    const me = await anatodGetClienteById(DEMO_CLIENT_ID);
-    const anatodClientId = Number(me.clienteId);
-
-    const results = await Promise.allSettled([
-      anatodListConexionesInternetByCliente(anatodClientId),
-      anatodListConexionesTelefoniaByCliente(anatodClientId),
-      anatodListConexionesTelevisionByCliente(anatodClientId),
-    ]);
-
-    const [internetRes, phoneRes, tvRes] = results;
-
-    const errors: Array<{ type: string; message: string }> = [];
-    const services: Array<any> = [];
-
-    if (internetRes.status === "fulfilled") {
-      const list = Array.isArray(internetRes.value?.data) ? internetRes.value.data : [];
-      const active = list.filter(
-        (x: any) =>
-          String(x?.conexion_cortado ?? "").toUpperCase() === "N" ||
-          String(x?.conexion_cortado ?? "").trim() === ""
-      );
-      for (const item of active) services.push(mapConexionToServiceDTO(item, "INTERNET"));
-    } else {
-      errors.push({
-        type: "INTERNET",
-        message: String(internetRes.reason?.message ?? internetRes.reason),
-      });
-    }
-
-    if (phoneRes.status === "fulfilled") {
-      const list = Array.isArray(phoneRes.value?.data) ? phoneRes.value.data : [];
-      const active = list.filter((x: any) => {
-        const v = x?.conexion_cortado ?? x?.cortado ?? x?.servicio_cortado;
-        if (v === null || v === undefined || String(v).trim() === "") return true;
-        return String(v).toUpperCase() === "N";
-      });
-      for (const item of active) services.push(mapConexionToServiceDTO(item, "PHONE"));
-    } else {
-      errors.push({ type: "PHONE", message: String(phoneRes.reason?.message ?? phoneRes.reason) });
-    }
-
-    if (tvRes.status === "fulfilled") {
-      const list = Array.isArray(tvRes.value?.data) ? tvRes.value.data : [];
-      const active = list.filter((x: any) => {
-        const v = x?.conexion_cortado ?? x?.cortado ?? x?.servicio_cortado;
-        if (v === null || v === undefined || String(v).trim() === "") return true;
-        return String(v).toUpperCase() === "N";
-      });
-      for (const item of active) services.push(mapConexionToServiceDTO(item, "TV"));
-    } else {
-      errors.push({ type: "TV", message: String(tvRes.reason?.message ?? tvRes.reason) });
-    }
-
-    res.json({
-      clientId: Number(DEMO_CLIENT_ID),
-      anatodClientId,
-      services,
-      source: "anatod:/cliente/{id}/conexiones/*",
-      meta: {
-        fetched: {
-          internet: internetRes.status === "fulfilled",
-          telefonia: phoneRes.status === "fulfilled",
-          television: tvRes.status === "fulfilled",
-        },
-        errors,
-      },
-    });
-  } catch (err: any) {
-    console.error(err);
-    res.status(502).json({
-      ok: false,
-      error: "ANATOD_SERVICES_ERROR",
       detail: String(err?.message ?? err),
     });
   }
@@ -300,12 +218,14 @@ app.get("/v1/me/purchase/financed", async (req, res) => {
       return res.status(400).json({ ok: false, error: "INVALID_AMOUNT" });
     }
 
+    // 1) Cupo oficial (anatod) + 2) Reservas activas (Neon)
     const c = await anatodGetClienteById(DEMO_CLIENT_ID);
     const reserved = await sumActiveReservations(Number(DEMO_CLIENT_ID));
 
     const official = c.financiable;
     const available = Math.max(official - reserved, 0);
 
+    // 3) Validación de cupo
     if (amount > available) {
       return res.status(409).json({
         ok: false,
@@ -317,6 +237,7 @@ app.get("/v1/me/purchase/financed", async (req, res) => {
       });
     }
 
+    // 4) Crear Order en Neon
     const orderId = `ord_${Date.now()}`;
     const order = await createOrder({
       id: orderId,
@@ -333,6 +254,7 @@ app.get("/v1/me/purchase/financed", async (req, res) => {
       description,
     });
 
+    // 5) Crear Reserva en Neon por el total
     const reservationId = `res_${Date.now()}`;
     const reservation = await createReservation({
       id: reservationId,
@@ -347,8 +269,10 @@ app.get("/v1/me/purchase/financed", async (req, res) => {
       amount,
     });
 
+    // 6) Calcular cuota (3 meses)
     const installment = Math.round((amount / 3) * 100) / 100;
 
+    // 7) Crear adicional real en anatod
     const adicionalRes = await createAriaAdditionalStrict({
       clientId: DEMO_CLIENT_ID,
       installmentValue: installment,
@@ -362,6 +286,7 @@ app.get("/v1/me/purchase/financed", async (req, res) => {
         status: adicionalRes.status,
       });
 
+      // 8) Consumir reserva (ya se creó el adicional OK)
       const consumed = await setReservationStatus(reservationId, "CONSUMED");
 
       await addOrderEvent(orderId, "RESERVATION_CONSUMED", {
@@ -369,6 +294,7 @@ app.get("/v1/me/purchase/financed", async (req, res) => {
         status: consumed?.status ?? "CONSUMED",
       });
 
+      // 9) Estado final de orden
       await setOrderStatus(orderId, "APLICADO");
       await addOrderEvent(orderId, "STATUS_UPDATED", { status: "APLICADO" });
 
@@ -381,6 +307,7 @@ app.get("/v1/me/purchase/financed", async (req, res) => {
       });
     }
 
+    // Si falla el adicional: dejamos reserva ACTIVE y orden EN_PROCESO
     await addOrderEvent(orderId, "ADICIONAL_FAILED", {
       status: adicionalRes.status,
       body: adicionalRes.bodyText.slice(0, 500),
