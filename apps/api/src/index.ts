@@ -1,7 +1,5 @@
-import express from "express";
-import cors from "cors";
-import helmet from "helmet";
 import dotenv from "dotenv";
+import { createApp } from "./app.js";
 
 import {
   listOrdersByClient,
@@ -36,18 +34,8 @@ const DEMO_CLIENT_ID = 66489;
 
 const app = express();
 
-// Config básica
-app.use(helmet());
-app.use(express.json({ limit: "1mb" }));
+const app = createApp();
 
-// CORS: en demo lo dejamos abierto; luego lo restringimos al dominio de Vercel
-app.use(
-  cors({
-    origin: "*",
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "Idempotency-Key"],
-  })
-);
 // ---------- Staff (interno) ----------
 app.post("/staff/auth/login", staffLogin);
 registerInternalCatalogRoutes(app);
