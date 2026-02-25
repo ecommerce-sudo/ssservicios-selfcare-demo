@@ -72,6 +72,11 @@ const DEFAULT_STORE_URL = "https://ssstore.com.ar";
 // violeta
 const BRAND = "#7b00ff";
 
+// ✅ Persistencia de Idempotency-Key por intento (sessionStorage) + expiración
+const PURCHASE_IDEM_STORAGE_KEY = "ssselfcare_purchase_idem_key";
+const PURCHASE_IDEM_STORAGE_TS = "ssselfcare_purchase_idem_ts";
+const PURCHASE_IDEM_TTL_MS = 10 * 60 * 1000; // 10 minutos
+
 type Tier = "INFINIUM" | "CLASSIC" | "BLACK";
 function getTier(cupo: number): { tier: Tier; accent: string; bg: string } {
   if (cupo < 200000) {
@@ -184,19 +189,26 @@ function makeIdempotencyKey(prefix = "purchase") {
   return `${prefix}-${uuid}`;
 }
 
-// ✅ Persistencia de Idempotency-Key por intento (sessionStorage)
-const PURCHASE_IDEM_STORAGE_KEY = "ssselfcare_purchase_idem_key";
-
 function getOrCreatePurchaseIdemKey(prefix = "buy-financed") {
   try {
-    const existing = sessionStorage.getItem(PURCHASE_IDEM_STORAGE_KEY);
-    if (existing && existing.trim()) return existing.trim();
+    const existingKey = (sessionStorage.getItem(PURCHASE_IDEM_STORAGE_KEY) ?? "").trim();
+    const tsRaw = (sessionStorage.getItem(PURCHASE_IDEM_STORAGE_TS) ?? "").trim();
+    const ts = tsRaw ? Number(tsRaw) : 0;
 
+    const now = Date.now();
+
+    // si existe y no expiró, reutilizar
+    if (existingKey && Number.isFinite(ts) && ts > 0 && now - ts < PURCHASE_IDEM_TTL_MS) {
+      return existingKey;
+    }
+
+    // si existe pero expiró, regenerar
     const created = makeIdempotencyKey(prefix);
     sessionStorage.setItem(PURCHASE_IDEM_STORAGE_KEY, created);
+    sessionStorage.setItem(PURCHASE_IDEM_STORAGE_TS, String(now));
     return created;
   } catch {
-    // fallback: si el browser bloquea storage
+    // fallback si storage está bloqueado
     return makeIdempotencyKey(prefix);
   }
 }
@@ -204,6 +216,7 @@ function getOrCreatePurchaseIdemKey(prefix = "buy-financed") {
 function clearPurchaseIdemKey() {
   try {
     sessionStorage.removeItem(PURCHASE_IDEM_STORAGE_KEY);
+    sessionStorage.removeItem(PURCHASE_IDEM_STORAGE_TS);
   } catch {
     // ignore
   }
@@ -228,6 +241,9 @@ export default function Page() {
   const [actionLoading, setActionLoading] = useState<null | "purchase" | "reconcile">(null);
   const [actionResult, setActionResult] = useState<any>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  // ✅ Mensaje “informativo” (no error)
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
 
   const [showAdmin, setShowAdmin] = useState(false);
 
@@ -318,6 +334,7 @@ export default function Page() {
     if (actionLoading === "purchase") return;
 
     setActionError(null);
+    setActionNotice(null);
     setActionResult(null);
     setActionLoading("purchase");
 
@@ -325,7 +342,7 @@ export default function Page() {
       const amt = Number(String(amount).trim());
       if (!Number.isFinite(amt) || amt <= 0) throw new Error("Monto inválido");
 
-      // ✅ Reusar la misma key mientras la compra no termine OK
+      // ✅ Reusar key mientras no termine OK (y expira a los 10 min)
       const idemKey = getOrCreatePurchaseIdemKey("buy-financed");
 
       const data = await fetchJSON("/v1/me/purchase/financed", {
@@ -342,7 +359,12 @@ export default function Page() {
 
       setActionResult(data);
 
-      // ✅ Si salió OK, limpiamos la key para el próximo intento nuevo
+      // ✅ UX: si fue replay, avisar
+      if (data?.idempotentReplay === true) {
+        setActionNotice("Reintento detectado: la compra ya estaba procesada. Te muestro el resultado.");
+      }
+
+      // ✅ Si salió OK, limpiamos key para el próximo intento nuevo
       if (data?.ok === true) {
         clearPurchaseIdemKey();
       }
@@ -350,7 +372,7 @@ export default function Page() {
       await Promise.all([loadMe(), loadServices(), loadNextInvoice(), loadAccount()]);
     } catch (e: any) {
       console.error(e);
-      // ⚠️ En error, NO limpiamos la key: así un retry reusa idemKey (y el backend hace replay)
+      // ⚠️ En error, NO limpiamos la key: retry reusa idemKey (y backend hace replay)
       setActionError(String(e?.message ?? e));
     } finally {
       setActionLoading(null);
@@ -359,6 +381,7 @@ export default function Page() {
 
   async function runReconcile() {
     setActionError(null);
+    setActionNotice(null);
     setActionResult(null);
     setActionLoading("reconcile");
     try {
@@ -477,6 +500,21 @@ export default function Page() {
 
       <div style={container}>
         <div style={{ display: "grid", gap: 14 }}>
+          {actionNotice ? (
+            <div
+              style={{
+                borderRadius: 14,
+                padding: "10px 12px",
+                border: "1px solid #c7d2fe",
+                background: "#eef2ff",
+                color: "#1e3a8a",
+                fontWeight: 800,
+              }}
+            >
+              {actionNotice}
+            </div>
+          ) : null}
+
           <NextInvoiceCard
             nextInvoice={nextInvoice}
             loadingNextInv={loadingNextInv}
