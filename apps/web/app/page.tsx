@@ -173,6 +173,16 @@ function accountLabel(status: string) {
   return status;
 }
 
+function makeIdempotencyKey(prefix = "purchase") {
+  // Browser moderno: crypto.randomUUID()
+  // Fallback: timestamp + random
+  const uuid =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? (crypto as any).randomUUID()
+      : `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  return `${prefix}-${uuid}`;
+}
+
 export default function Page() {
   const API_BASE = useMemo(() => process.env.NEXT_PUBLIC_API_BASE_URL || DEFAULT_API_BASE, []);
   const STORE_URL = useMemo(() => process.env.NEXT_PUBLIC_STORE_URL || DEFAULT_STORE_URL, []);
@@ -195,9 +205,9 @@ export default function Page() {
 
   const [showAdmin, setShowAdmin] = useState(false);
 
-  async function fetchJSON(path: string) {
+  async function fetchJSON(path: string, init?: RequestInit) {
     const url = `${API_BASE}${path}`;
-    const res = await fetch(url, { method: "GET" });
+    const res = await fetch(url, init ?? { method: "GET" });
     const text = await res.text();
 
     let data: any = null;
@@ -208,7 +218,9 @@ export default function Page() {
     }
 
     if (!res.ok) {
-      const msg = (data && (data.detail || data.error || data.message)) || `HTTP ${res.status} ${res.statusText}`;
+      const msg =
+        (data && (data.detail || data.error || data.message)) ||
+        `HTTP ${res.status} ${res.statusText}`;
       throw new Error(`${msg} | url=${url}`);
     }
     return data;
@@ -278,17 +290,33 @@ export default function Page() {
   }, []);
 
   async function runPurchase() {
+    // evita doble click “a lo bruto”
+    if (actionLoading === "purchase") return;
+
     setActionError(null);
     setActionResult(null);
     setActionLoading("purchase");
+
     try {
       const amt = Number(String(amount).trim());
       if (!Number.isFinite(amt) || amt <= 0) throw new Error("Monto inválido");
 
-      const qAmount = encodeURIComponent(String(amt));
-      const qDesc = encodeURIComponent(desc.trim() || `Compra App Demo - ${new Date().toISOString()}`);
+      const idemKey = makeIdempotencyKey("buy-financed");
 
-      const data = await fetchJSON(`/v1/me/purchase/financed?amount=${qAmount}&desc=${qDesc}`);
+      const data = await fetchJSON("/v1/me/purchase/financed", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": idemKey,
+          // si querés testear con otro cliente, acá podrías mandar:
+          // "X-Client-Id": String(me?.clientId ?? "")
+        },
+        body: JSON.stringify({
+          amount: amt,
+          desc: desc.trim() || `Compra App Demo - ${new Date().toISOString()}`,
+        }),
+      });
+
       setActionResult(data);
 
       await Promise.all([loadMe(), loadServices(), loadNextInvoice(), loadAccount()]);
@@ -384,7 +412,8 @@ export default function Page() {
 
   const benefitAmount: React.CSSProperties = {
     marginTop: 10,
-    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+    fontFamily:
+      "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
     fontSize: 30,
     fontWeight: 900,
     letterSpacing: -1,
