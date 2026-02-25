@@ -1,5 +1,6 @@
 // apps/api/src/index.ts
 import dotenv from "dotenv";
+import rateLimit from "express-rate-limit";
 import { createApp } from "./app.js";
 
 import {
@@ -78,7 +79,6 @@ app.get("/v1/me", async (req, res) => {
     const clientId = Number(req.clientId ?? DEMO_CLIENT_ID);
 
     const c = await anatodGetClienteById(clientId);
-
     const reserved = await sumActiveReservations(clientId);
 
     const official = c.financiable;
@@ -213,7 +213,19 @@ app.get("/v1/me/reservations", async (req, res) => {
 });
 
 // ---------- Compra financiada ----------
-app.get("/v1/me/purchase/financed", async (req, res) => {
+const purchaseLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000, // 5 min
+  max: 6, // 6 requests por IP por ventana
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    ok: false,
+    error: "RATE_LIMITED",
+    detail: "Demasiadas solicitudes de compra. Probá de nuevo en unos minutos.",
+  },
+});
+
+app.get("/v1/me/purchase/financed", purchaseLimiter, async (req, res) => {
   try {
     const clientId = Number(req.clientId ?? DEMO_CLIENT_ID);
 
@@ -227,12 +239,14 @@ app.get("/v1/me/purchase/financed", async (req, res) => {
       return res.status(400).json({ ok: false, error: "INVALID_AMOUNT" });
     }
 
+    // 1) Cupo oficial (anatod) + 2) Reservas activas (Neon)
     const c = await anatodGetClienteById(clientId);
     const reserved = await sumActiveReservations(clientId);
 
     const official = c.financiable;
     const available = Math.max(official - reserved, 0);
 
+    // 3) Validación de cupo
     if (amount > available) {
       return res.status(409).json({
         ok: false,
@@ -244,6 +258,7 @@ app.get("/v1/me/purchase/financed", async (req, res) => {
       });
     }
 
+    // 4) Crear Order en Neon
     const orderId = `ord_${Date.now()}`;
     const order = await createOrder({
       id: orderId,
@@ -260,6 +275,7 @@ app.get("/v1/me/purchase/financed", async (req, res) => {
       description,
     });
 
+    // 5) Crear Reserva en Neon por el total
     const reservationId = `res_${Date.now()}`;
     const reservation = await createReservation({
       id: reservationId,
@@ -274,8 +290,10 @@ app.get("/v1/me/purchase/financed", async (req, res) => {
       amount,
     });
 
+    // 6) Calcular cuota (3 meses)
     const installment = Math.round((amount / 3) * 100) / 100;
 
+    // 7) Crear adicional real en anatod
     const adicionalRes = await createAriaAdditionalStrict({
       clientId,
       installmentValue: installment,
@@ -289,6 +307,7 @@ app.get("/v1/me/purchase/financed", async (req, res) => {
         status: adicionalRes.status,
       });
 
+      // 8) Consumir reserva (ya se creó el adicional OK)
       const consumed = await setReservationStatus(reservationId, "CONSUMED");
 
       await addOrderEvent(orderId, "RESERVATION_CONSUMED", {
@@ -296,6 +315,7 @@ app.get("/v1/me/purchase/financed", async (req, res) => {
         status: consumed?.status ?? "CONSUMED",
       });
 
+      // 9) Estado final de orden
       await setOrderStatus(orderId, "APLICADO");
       await addOrderEvent(orderId, "STATUS_UPDATED", { status: "APLICADO" });
 
@@ -308,6 +328,7 @@ app.get("/v1/me/purchase/financed", async (req, res) => {
       });
     }
 
+    // Si falla el adicional: dejamos reserva ACTIVE y orden EN_PROCESO
     await addOrderEvent(orderId, "ADICIONAL_FAILED", {
       status: adicionalRes.status,
       body: adicionalRes.bodyText.slice(0, 500),
