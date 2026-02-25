@@ -1,9 +1,36 @@
 // apps/api/src/internalCatalog.ts
-import type { Request, Response } from "express";
+import type { Request, Response, NextFunction } from "express";
+import jwt from "jsonwebtoken";
+import type { Secret } from "jsonwebtoken";
 
 import { listCatalogProducts } from "./catalogRepo.js";
 import { syncCatalogFull, syncCatalogIncremental } from "./syncCatalog.js";
-import { requireSeller } from "./middleware/requireSeller.js";
+
+const STAFF_JWT_SECRET = process.env.STAFF_JWT_SECRET || "";
+
+function requireSeller(req: Request, res: Response, next: NextFunction) {
+  const auth = req.header("authorization");
+  if (!auth) return res.status(401).json({ error: "Falta Authorization" });
+
+  const [scheme, token] = auth.split(" ");
+  if (!scheme || scheme.toLowerCase() !== "bearer" || !token) {
+    return res.status(401).json({ error: "Authorization inválido" });
+  }
+
+  if (!STAFF_JWT_SECRET) {
+    return res.status(500).json({ error: "STAFF_JWT_SECRET no configurado" });
+  }
+
+  try {
+    const payload = jwt.verify(token, STAFF_JWT_SECRET as Secret) as any;
+    if (payload?.role !== "SELLER") {
+      return res.status(403).json({ error: "No autorizado" });
+    }
+    return next();
+  } catch {
+    return res.status(401).json({ error: "Token inválido/expirado" });
+  }
+}
 
 export function registerInternalCatalogRoutes(app: any) {
   // 1) Listado catálogo (desde DB)
@@ -30,7 +57,7 @@ export function registerInternalCatalogRoutes(app: any) {
     }
   });
 
-  // 2) Sync FULL (una vez)
+  // 2) Sync FULL
   app.post("/internal/catalog/admin/sync/full", requireSeller, async (_req: Request, res: Response) => {
     try {
       const result = await syncCatalogFull();
@@ -41,7 +68,7 @@ export function registerInternalCatalogRoutes(app: any) {
     }
   });
 
-  // 3) Sync incremental (para correr seguido)
+  // 3) Sync incremental
   app.post(
     "/internal/catalog/admin/sync/incremental",
     requireSeller,
