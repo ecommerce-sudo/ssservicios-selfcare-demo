@@ -55,17 +55,12 @@ function safeDate(value: any): string | null {
 }
 
 app.get("/health", (_req, res) => {
-  res.json({
-    ok: true,
-    service: "ssservicios-selfcare-demo-api",
-    ts: new Date().toISOString(),
-  });
+  res.json({ ok: true, service: "ssservicios-selfcare-demo-api", ts: new Date().toISOString() });
 });
 
 app.get("/v1/me", async (req, res) => {
   try {
     const clientId = Number(req.clientId ?? DEMO_CLIENT_ID);
-
     const c = await anatodGetClienteById(clientId);
     const reserved = await sumActiveReservations(clientId);
 
@@ -91,7 +86,6 @@ app.get("/v1/me", async (req, res) => {
 app.get("/v1/me/account", async (req, res) => {
   try {
     const clientId = Number(req.clientId ?? DEMO_CLIENT_ID);
-
     const c = await anatodGetClienteById(clientId);
     const raw: any = (c as any).raw ?? {};
 
@@ -103,8 +97,7 @@ app.get("/v1/me/account", async (req, res) => {
     const habilitacion = safeDate(raw.cliente_habilitacion);
     const corte = safeDate(raw.cliente_corte);
 
-    const status =
-      cortado ? "CORTADO" : mora || mesesAtraso > 0 || saldo > 0 ? "CON_DEUDA" : "AL_DIA";
+    const status = cortado ? "CORTADO" : mora || mesesAtraso > 0 || saldo > 0 ? "CON_DEUDA" : "AL_DIA";
 
     res.json({
       clientId,
@@ -121,11 +114,7 @@ app.get("/v1/me/account", async (req, res) => {
     });
   } catch (err: any) {
     console.error(err);
-    res.status(502).json({
-      ok: false,
-      error: "ANATOD_ACCOUNT_ERROR",
-      detail: String(err?.message ?? err),
-    });
+    res.status(502).json({ ok: false, error: "ANATOD_ACCOUNT_ERROR", detail: String(err?.message ?? err) });
   }
 });
 
@@ -133,13 +122,8 @@ app.get("/v1/me/account", async (req, res) => {
 app.get("/v1/me/reservations/demo-add", async (req, res) => {
   try {
     const clientId = Number(req.clientId ?? DEMO_CLIENT_ID);
-
-    const amountRaw = String(req.query.amount ?? "").trim();
-    const amount = Number(amountRaw);
-
-    if (!Number.isFinite(amount) || amount <= 0) {
-      return res.status(400).json({ ok: false, error: "INVALID_AMOUNT" });
-    }
+    const amount = Number(String(req.query.amount ?? "").trim());
+    if (!Number.isFinite(amount) || amount <= 0) return res.status(400).json({ ok: false, error: "INVALID_AMOUNT" });
 
     const id = `res_${Date.now()}`;
     const row = await createReservation({ id, clientId, amount, status: "ACTIVE" });
@@ -182,166 +166,104 @@ const purchaseLimiter = rateLimit({
   max: 6,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { ok: false, error: "RATE_LIMITED", detail: "Demasiadas solicitudes de compra." },
+  message: { ok: false, error: "RATE_LIMITED", detail: "Demasiadas solicitudes de compra. Probá más tarde." },
 });
 
-app.get("/v1/me/purchase/financed", purchaseLimiter, async (req, res) => {
-  try {
-    const clientId = Number(req.clientId ?? DEMO_CLIENT_ID);
+async function handlePurchaseFinanced(req: any, res: any) {
+  const clientId = Number(req.clientId ?? DEMO_CLIENT_ID);
 
-    const amountRaw = String(req.query.amount ?? "").trim();
-    const descRaw = String(req.query.desc ?? "").trim();
-    const amount = Number(amountRaw);
-    const description = descRaw || `Compra App Demo - ${new Date().toISOString()}`;
+  const amountRaw = String(req.method === "POST" ? req.body?.amount : req.query?.amount ?? "").trim();
+  const descRaw = String(req.method === "POST" ? req.body?.desc : req.query?.desc ?? "").trim();
 
-    if (!Number.isFinite(amount) || amount <= 0) {
-      return res.status(400).json({ ok: false, error: "INVALID_AMOUNT" });
+  const amount = Number(amountRaw);
+  const description = descRaw || `Compra App Demo - ${new Date().toISOString()}`;
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return res.status(400).json({ ok: false, error: "INVALID_AMOUNT" });
+  }
+
+  const idemKey = String(req.header("Idempotency-Key") ?? "").trim();
+
+  if (idemKey) {
+    const existing = await findOrderByIdempotencyKey({ clientId, idempotencyKey: idemKey, type: "BUY_FINANCED" });
+    if (existing) {
+      const events = await listOrderEvents(existing.id).catch(() => []);
+      return res.status(200).json({ ok: true, idempotentReplay: true, order: existing, events, status: existing.status });
     }
+  }
 
-    const idemKey = String(req.header("Idempotency-Key") ?? "").trim();
+  const c = await anatodGetClienteById(clientId);
+  const reserved = await sumActiveReservations(clientId);
+  const official = c.financiable;
+  const available = Math.max(official - reserved, 0);
 
-    // ✅ 0) Idempotencia: si ya existe, devolvemos replay
-    if (idemKey) {
-      const existing = await findOrderByIdempotencyKey({
-        clientId,
-        idempotencyKey: idemKey,
-        type: "BUY_FINANCED",
-      });
+  if (amount > available) {
+    return res.status(409).json({ ok: false, error: "INSUFFICIENT_CREDIT", official, reserved, available, requested: amount });
+  }
 
-      if (existing) {
-        const events = await listOrderEvents(existing.id).catch(() => []);
-        return res.status(200).json({
-          ok: true,
-          idempotentReplay: true,
-          order: existing,
-          events,
-          status: existing.status,
-        });
-      }
-    }
+  const orderId = `ord_${Date.now()}`;
+  const order = await createOrder({
+    id: orderId,
+    clientId,
+    type: "BUY_FINANCED",
+    status: "PENDIENTE",
+    conexionId: null,
+    idempotencyKey: idemKey || null,
+  });
 
-    // 1) Cupo + reservas
-    const c = await anatodGetClienteById(clientId);
-    const reserved = await sumActiveReservations(clientId);
+  await addOrderEvent(orderId, "CREATED", { type: "BUY_FINANCED", amount, description });
 
-    const official = c.financiable;
-    const available = Math.max(official - reserved, 0);
+  const reservationId = `res_${Date.now()}`;
+  const reservation = await createReservation({ id: reservationId, clientId, orderId, amount, status: "ACTIVE" });
+  await addOrderEvent(orderId, "RESERVED_CREDIT", { reservationId, amount });
 
-    if (amount > available) {
-      return res.status(409).json({
-        ok: false,
-        error: "INSUFFICIENT_CREDIT",
-        official,
-        reserved,
-        available,
-        requested: amount,
-      });
-    }
+  const installment = Math.round((amount / 3) * 100) / 100;
 
-    // 2) Crear Order
-    const orderId = `ord_${Date.now()}`;
-    const order = await createOrder({
-      id: orderId,
-      clientId,
-      type: "BUY_FINANCED",
-      status: "PENDIENTE",
-      conexionId: null,
-      idempotencyKey: idemKey || null,
-    });
+  const adicionalRes = await createAriaAdditionalStrict({ clientId, installmentValue: installment, description });
 
-    await addOrderEvent(orderId, "CREATED", { type: "BUY_FINANCED", amount, description });
+  if (adicionalRes.ok) {
+    await addOrderEvent(orderId, "ADICIONAL_CREATED", { installment, months: 3, status: adicionalRes.status });
 
-    // 3) Reserva
-    const reservationId = `res_${Date.now()}`;
-    const reservation = await createReservation({
-      id: reservationId,
-      clientId,
-      orderId,
-      amount,
-      status: "ACTIVE",
-    });
+    const consumed = await setReservationStatus(reservationId, "CONSUMED");
+    await addOrderEvent(orderId, "RESERVATION_CONSUMED", { reservationId, status: consumed?.status ?? "CONSUMED" });
 
-    await addOrderEvent(orderId, "RESERVED_CREDIT", { reservationId, amount });
+    await setOrderStatus(orderId, "APLICADO");
+    await addOrderEvent(orderId, "STATUS_UPDATED", { status: "APLICADO" });
 
-    // 4) Adicional
-    const installment = Math.round((amount / 3) * 100) / 100;
+    return res.status(201).json({ ok: true, order, reservation: consumed ?? reservation, adicional: { ok: true, status: adicionalRes.status }, status: "APLICADO" });
+  }
 
-    const adicionalRes = await createAriaAdditionalStrict({
-      clientId,
-      installmentValue: installment,
-      description,
-    });
+  await addOrderEvent(orderId, "ADICIONAL_FAILED", { status: adicionalRes.status, body: adicionalRes.bodyText.slice(0, 500) });
+  await setOrderStatus(orderId, "EN_PROCESO");
+  await addOrderEvent(orderId, "STATUS_UPDATED", { status: "EN_PROCESO" });
 
-    if (adicionalRes.ok) {
-      await addOrderEvent(orderId, "ADICIONAL_CREATED", {
-        installment,
-        months: 3,
-        status: adicionalRes.status,
-      });
+  return res.status(502).json({
+    ok: false,
+    error: "ADICIONAL_FAILED",
+    order,
+    reservation,
+    status: "EN_PROCESO",
+    adicional: { ok: false, status: adicionalRes.status, body: adicionalRes.bodyText.slice(0, 500) },
+  });
+}
 
-      const consumed = await setReservationStatus(reservationId, "CONSUMED");
-      await addOrderEvent(orderId, "RESERVATION_CONSUMED", {
-        reservationId,
-        status: consumed?.status ?? "CONSUMED",
-      });
-
-      await setOrderStatus(orderId, "APLICADO");
-      await addOrderEvent(orderId, "STATUS_UPDATED", { status: "APLICADO" });
-
-      return res.status(201).json({
-        ok: true,
-        order,
-        reservation: consumed ?? reservation,
-        adicional: { ok: true, status: adicionalRes.status },
-        status: "APLICADO",
-      });
-    }
-
-    await addOrderEvent(orderId, "ADICIONAL_FAILED", {
-      status: adicionalRes.status,
-      body: adicionalRes.bodyText.slice(0, 500),
-    });
-
-    await setOrderStatus(orderId, "EN_PROCESO");
-    await addOrderEvent(orderId, "STATUS_UPDATED", { status: "EN_PROCESO" });
-
-    return res.status(502).json({
-      ok: false,
-      error: "ADICIONAL_FAILED",
-      order,
-      reservation,
-      status: "EN_PROCESO",
-      adicional: { ok: false, status: adicionalRes.status, body: adicionalRes.bodyText.slice(0, 500) },
-    });
-  } catch (err: any) {
+// Legacy GET (demo)
+app.get("/v1/me/purchase/financed", purchaseLimiter, (req, res) => {
+  handlePurchaseFinanced(req, res).catch((err: any) => {
     console.error(err);
     res.status(500).json({ ok: false, error: "PURCHASE_FLOW_ERROR", detail: String(err?.message ?? err) });
-  }
+  });
+});
+
+// Pro POST (prod-friendly)
+app.post("/v1/me/purchase/financed", purchaseLimiter, (req, res) => {
+  handlePurchaseFinanced(req, res).catch((err: any) => {
+    console.error(err);
+    res.status(500).json({ ok: false, error: "PURCHASE_FLOW_ERROR", detail: String(err?.message ?? err) });
+  });
 });
 
 // ---------- Órdenes ----------
-app.get("/v1/me/orders/demo-create", async (req, res) => {
-  try {
-    const clientId = Number(req.clientId ?? DEMO_CLIENT_ID);
-    const orderId = `ord_${Date.now()}`;
-
-    const order = await createOrder({
-      id: orderId,
-      clientId,
-      type: "UPGRADE_INTERNET",
-      status: "PENDIENTE",
-      conexionId: null,
-      idempotencyKey: req.header("Idempotency-Key") ?? null,
-    });
-
-    await addOrderEvent(orderId, "CREATED", { via: "demo_create_get" });
-    res.status(201).json({ ok: true, order });
-  } catch (err: any) {
-    console.error(err);
-    res.status(500).json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
-  }
-});
-
 app.get("/v1/me/orders", async (req, res) => {
   try {
     const clientId = Number(req.clientId ?? DEMO_CLIENT_ID);
@@ -356,14 +278,10 @@ app.get("/v1/me/orders", async (req, res) => {
 app.get("/v1/me/orders/reconcile", async (req, res) => {
   try {
     const clientId = Number(req.clientId ?? DEMO_CLIENT_ID);
-
     const pending = await listPendingBuyFinancedByClient(clientId);
 
     let updatedToApplied = 0;
     let updatedToInProcess = 0;
-
-    const touched: Array<{ orderId: string; from: string; to: string; reason: string }> = [];
-    const skipped: Array<{ orderId: string; status: string; foundEvents: string[] }> = [];
 
     for (const o of pending) {
       const events = await listOrderEvents(o.id);
@@ -375,15 +293,9 @@ app.get("/v1/me/orders/reconcile", async (req, res) => {
 
       if (hasAdicionalCreated && hasReservationConsumed) {
         await setOrderStatus(o.id, "APLICADO");
-        await addOrderEvent(o.id, "RECONCILED", {
-          from: o.status,
-          to: "APLICADO",
-          rule: "ADICIONAL_CREATED+RESERVATION_CONSUMED",
-        });
+        await addOrderEvent(o.id, "RECONCILED", { from: o.status, to: "APLICADO", rule: "ADICIONAL_CREATED+RESERVATION_CONSUMED" });
         await addOrderEvent(o.id, "STATUS_UPDATED", { status: "APLICADO", via: "reconcile" });
-
         updatedToApplied++;
-        touched.push({ orderId: o.id, from: o.status, to: "APLICADO", reason: "adicional+reserva_consumida" });
         continue;
       }
 
@@ -391,53 +303,17 @@ app.get("/v1/me/orders/reconcile", async (req, res) => {
         await setOrderStatus(o.id, "EN_PROCESO");
         await addOrderEvent(o.id, "RECONCILED", { from: o.status, to: "EN_PROCESO", rule: "ADICIONAL_FAILED" });
         await addOrderEvent(o.id, "STATUS_UPDATED", { status: "EN_PROCESO", via: "reconcile" });
-
         updatedToInProcess++;
-        touched.push({ orderId: o.id, from: o.status, to: "EN_PROCESO", reason: "adicional_failed" });
         continue;
       }
-
-      skipped.push({ orderId: o.id, status: o.status, foundEvents: Array.from(types) });
     }
 
-    res.json({
-      ok: true,
-      clientId,
-      scanned: pending.length,
-      updatedToApplied,
-      updatedToInProcess,
-      skipped,
-      touched,
-    });
+    res.json({ ok: true, clientId, scanned: pending.length, updatedToApplied, updatedToInProcess });
   } catch (err: any) {
     console.error(err);
     res.status(500).json({ ok: false, error: "RECONCILE_ERROR", detail: String(err?.message ?? err) });
   }
 });
 
-app.post("/v1/me/orders/demo", async (req, res) => {
-  try {
-    const clientId = Number(req.clientId ?? DEMO_CLIENT_ID);
-
-    const orderId = `ord_${Date.now()}`;
-    const order = await createOrder({
-      id: orderId,
-      clientId,
-      type: "UPGRADE_INTERNET",
-      status: "PENDIENTE",
-      conexionId: null,
-      idempotencyKey: req.header("Idempotency-Key") ?? null,
-    });
-
-    await addOrderEvent(orderId, "CREATED", { via: "demo_endpoint" });
-    res.status(201).json({ ok: true, order });
-  } catch (err: any) {
-    console.error(err);
-    res.status(500).json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
-  }
-});
-
 const PORT = Number(process.env.PORT || 3001);
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`[api] listening on http://0.0.0.0:${PORT}`);
-});
+app.listen(PORT, "0.0.0.0", () => console.log(`[api] listening on http://0.0.0.0:${PORT}`));
