@@ -25,8 +25,16 @@ import {
 } from "./reservations.js";
 
 import { createAriaAdditionalStrict } from "./adicional.js";
-import { staffLogin } from "./staff.js";
-import { registerInternalCatalogRoutes } from "./internalCatalog.js";
+import { registerStaffRoutes } from "./routes/staff.js";
+
+import {
+  anatodListConexionesInternetByCliente,
+  anatodListConexionesTelefoniaByCliente,
+  anatodListConexionesTelevisionByCliente,
+  mapConexionToServiceDTO,
+  anatodGetFacturaById,
+  anatodFacturaPrintLink,
+} from "./integrations/anatodClient.js";
 
 dotenv.config();
 
@@ -38,8 +46,7 @@ const DEMO_CLIENT_ID = 66489;
 const app = createApp();
 
 // ---------- Staff (interno) ----------
-app.post("/staff/auth/login", staffLogin);
-registerInternalCatalogRoutes(app);
+registerStaffRoutes(app);
 
 // ---------- Helpers ----------
 function parseMoneyLike(value: unknown): number {
@@ -63,192 +70,6 @@ function escapeHtml(input: any): string {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
-}
-
-/**
- * --- Anatod: fetch genérico (para conexiones por vertical)
- * Best-effort: el caller decide si rompe o tolera.
- */
-async function anatodGetJSON(path: string) {
-  const base = process.env.ANATOD_BASE_URL; // ej: https://api.anatod.ar/api
-  const apiKey = process.env.ANATOD_API_KEY;
-
-  if (!base) throw new Error("Missing env ANATOD_BASE_URL");
-  if (!apiKey) throw new Error("Missing env ANATOD_API_KEY");
-
-  const url = `${base}${path.startsWith("/") ? "" : "/"}${path}`;
-
-  const res = await fetch(url, {
-    method: "GET",
-    headers: { accept: "application/json", "x-api-key": apiKey },
-  });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`ANATOD_GET_FAILED url=${url} status=${res.status} body=${text.slice(0, 300)}`);
-  }
-
-  return (await res.json()) as any;
-}
-
-/**
- * ✅ REAL: Conexiones Internet del cliente (Anatod)
- * Endpoint observado: /cliente/{id}/conexiones/internet
- */
-async function anatodListConexionesInternetByCliente(anatodClientId: number | string) {
-  return anatodGetJSON(`/cliente/${encodeURIComponent(String(anatodClientId))}/conexiones/internet`);
-}
-
-/**
- * ✅ REAL: Conexiones Telefonía del cliente (Anatod)
- * Endpoint (doc): /cliente/{id}/conexiones/telefonia
- */
-async function anatodListConexionesTelefoniaByCliente(anatodClientId: number | string) {
-  return anatodGetJSON(
-    `/cliente/${encodeURIComponent(String(anatodClientId))}/conexiones/telefonia`
-  );
-}
-
-/**
- * ✅ REAL: Conexiones Televisión del cliente (Anatod)
- * Endpoint (doc): /cliente/{id}/conexiones/television
- */
-async function anatodListConexionesTelevisionByCliente(anatodClientId: number | string) {
-  return anatodGetJSON(
-    `/cliente/${encodeURIComponent(String(anatodClientId))}/conexiones/television`
-  );
-}
-
-/**
- * Mapper tolerante: convierte cualquier item "conexion_*" (o similar) en un DTO de Service.
- * - Para Internet ya sabemos: conexion_id, conexion_plan, conexion_domicilio, conexion_cortado
- * - Para Telefonía/TV asumimos que viene también en forma de "conexiones" (similar estructura),
- *   pero si cambia, igual devolvemos algo usable (id/name/status) sin romper.
- */
-function mapConexionToServiceDTO(item: any, type: "INTERNET" | "PHONE" | "TV") {
-  const id =
-    item?.conexion_id ??
-    item?.telefono_id ??
-    item?.television_id ??
-    item?.id ??
-    item?.servicio_id ??
-    item?.linea_id ??
-    item?.abonado_id ??
-    null;
-
-  const planId =
-    item?.conexion_plan ??
-    item?.plan_id ??
-    item?.telefono_plan ??
-    item?.television_plan ??
-    item?.servicio_plan ??
-    null;
-
-  const domicilio =
-    item?.conexion_domicilio ??
-    item?.domicilio ??
-    item?.direccion ??
-    item?.instalacion_domicilio ??
-    "";
-
-  const cortadoRaw =
-    item?.conexion_cortado ??
-    item?.cortado ??
-    item?.estado_corte ??
-    item?.servicio_cortado ??
-    null;
-
-  // Activo "fuerte" si existe el campo cortado tipo N/Y; si no existe, no filtramos (unknown)
-  const hasCortadoFlag = cortadoRaw !== null && cortadoRaw !== undefined && String(cortadoRaw).trim() !== "";
-  const isActive = hasCortadoFlag ? String(cortadoRaw).toUpperCase() === "N" : true;
-
-  const status = isActive ? "ACTIVE" : "INACTIVE";
-
-  // Nombre: mientras no tengamos endpoint de planes, dejamos algo consistente
-  const name =
-    item?.name ??
-    item?.servicio_nombre ??
-    item?.plan_nombre ??
-    item?.descripcion ??
-    (planId ? `${type} (Plan ${planId})` : `${type} (Servicio ${String(id ?? "s/n")})`);
-
-  return {
-    id: String(id ?? `${type}_${Math.random().toString(16).slice(2)}`),
-    type,
-    name: String(name),
-    status,
-    extra: domicilio ? String(domicilio) : "",
-    sourceId: id ? Number(id) : undefined,
-    planId: planId ? Number(planId) : undefined,
-  };
-}
-
-/**
- * Llamada directa a Anatod: /factura/{facturaId}
- * (No depende de modificar anatod.ts, se mantiene encapsulado acá)
- */
-async function anatodGetFacturaById(facturaId: number | string) {
-  const base = process.env.ANATOD_BASE_URL; // ej: https://api.anatod.ar/api
-  const apiKey = process.env.ANATOD_API_KEY;
-
-  if (!base) throw new Error("Missing env ANATOD_BASE_URL");
-  if (!apiKey) throw new Error("Missing env ANATOD_API_KEY");
-
-  const url = `${base}/factura/${facturaId}`;
-
-  const res = await fetch(url, {
-    method: "GET",
-    headers: { accept: "application/json", "x-api-key": apiKey },
-  });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(
-      `ANATOD_GET_FACTURA_FAILED status=${res.status} body=${text.slice(0, 300)}`
-    );
-  }
-
-  const json = (await res.json()) as any;
-  // a veces viene {data:[{...}]} o {data:{...}} o directo
-  if (json && typeof json === "object" && "data" in json) return (json as any).data;
-  return json;
-}
-
-/**
- * ✅ NUEVO: Llamada directa a Anatod: /factura/{facturaId}/print
- * Devuelve { urlFactura: "https://....pdf" } (S3)
- */
-async function anatodFacturaPrintLink(facturaId: number | string) {
-  const base = process.env.ANATOD_BASE_URL; // ej: https://api.anatod.ar/api
-  const apiKey = process.env.ANATOD_API_KEY;
-
-  if (!base) throw new Error("Missing env ANATOD_BASE_URL");
-  if (!apiKey) throw new Error("Missing env ANATOD_API_KEY");
-
-  const id = String(facturaId).trim();
-  if (!id) throw new Error("Missing facturaId");
-
-  const url = `${base}/factura/${encodeURIComponent(id)}/print`;
-
-  const res = await fetch(url, {
-    method: "GET",
-    headers: { accept: "application/json", "x-api-key": apiKey },
-  });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(
-      `ANATOD_FACTURA_PRINT_FAILED status=${res.status} body=${text.slice(0, 300)}`
-    );
-  }
-
-  const json = (await res.json()) as any;
-
-  // esperado: { urlFactura: "..." } (a veces puede venir anidado)
-  const urlFactura =
-    json?.urlFactura ?? json?.data?.urlFactura ?? json?.url ?? json?.data?.url;
-
-  return { raw: json, urlFactura: urlFactura ? String(urlFactura) : "" };
 }
 
 // ---------- Healthcheck ----------
@@ -325,13 +146,15 @@ app.get("/v1/me/services", async (_req, res) => {
       );
       for (const item of active) services.push(mapConexionToServiceDTO(item, "INTERNET"));
     } else {
-      errors.push({ type: "INTERNET", message: String(internetRes.reason?.message ?? internetRes.reason) });
+      errors.push({
+        type: "INTERNET",
+        message: String(internetRes.reason?.message ?? internetRes.reason),
+      });
     }
 
-    // Telefonía (si no hay data, no aparece)
+    // Telefonía
     if (phoneRes.status === "fulfilled") {
       const list = Array.isArray(phoneRes.value?.data) ? phoneRes.value.data : [];
-      // si hay flag de cortado, filtramos; si no, mostramos todo (UNKNOWN->ACTIVE)
       const active = list.filter((x: any) => {
         const v = x?.conexion_cortado ?? x?.cortado ?? x?.servicio_cortado;
         if (v === null || v === undefined || String(v).trim() === "") return true;
@@ -367,7 +190,7 @@ app.get("/v1/me/services", async (_req, res) => {
           telefonia: phoneRes.status === "fulfilled",
           television: tvRes.status === "fulfilled",
         },
-        errors, // útil para debug; si querés lo escondemos después en prod
+        errors, // útil para debug; en prod lo podemos “feature flag”
       },
     });
   } catch (err: any) {
@@ -445,16 +268,13 @@ app.get("/v1/me/invoices/next", async (_req, res) => {
   }
 });
 
-// Factura puntual (DTO) — útil para “detalle”
+// Factura puntual (DTO)
 app.get("/v1/me/invoices/:facturaId", async (req, res) => {
   try {
     const facturaId = String(req.params.facturaId ?? "").trim();
     if (!facturaId) return res.status(400).json({ ok: false, error: "MISSING_FACTURA_ID" });
 
-    // Llamada directa a /factura/{id}
     const raw = await anatodGetFacturaById(facturaId);
-
-    // Si devuelve array, tomamos el primer elemento
     const item = Array.isArray(raw) ? raw[0] : raw;
     if (!item) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
 
@@ -476,23 +296,18 @@ app.get("/v1/me/invoices/:facturaId", async (req, res) => {
 });
 
 /**
- * ✅ NUEVO: PDF nativo (Anatod → S3) vía redirect:
- * - tu API NO proxynea bytes
- * - NO expone API key
- * - Render no paga ancho de banda
+ * ✅ PDF nativo (Anatod → S3) vía redirect
  */
 app.get("/v1/me/invoices/:facturaId/print", async (req, res) => {
   try {
     const facturaId = String(req.params.facturaId ?? "").trim();
     if (!facturaId) return res.status(400).json({ ok: false, error: "MISSING_FACTURA_ID" });
 
-    // sanity: demo only ids numéricos
     if (!/^\d+$/.test(facturaId)) {
       return res.status(400).json({ ok: false, error: "INVALID_FACTURA_ID" });
     }
 
-    // ✅ Validación “pro” (segura) sin depender de nuevos endpoints:
-    // listamos facturas del cliente y verificamos pertenencia antes de pedir el print
+    // Validación de pertenencia
     const me = await anatodGetClienteById(DEMO_CLIENT_ID);
     const anatodClientId = Number(me.clienteId);
 
@@ -528,8 +343,7 @@ app.get("/v1/me/invoices/:facturaId/print", async (req, res) => {
 });
 
 /**
- * ✅ Descarga de “comprobante” sin dependencias:
- * - retorna HTML como attachment (el usuario puede imprimir “Guardar como PDF”)
+ * ✅ Descarga de “comprobante” HTML
  */
 app.get("/v1/me/invoices/:facturaId/receipt", async (req, res) => {
   try {
@@ -544,7 +358,6 @@ app.get("/v1/me/invoices/:facturaId/receipt", async (req, res) => {
 
     const dto: any = mapFacturaToDTO(item);
 
-    // Intentamos extraer campos comunes del raw por si el mapper no trae alguno
     const tipo = dto.type ?? item.factura_tipo ?? "-";
     const ptoVta = dto.pointOfSale ?? item.factura_puntoventa ?? "-";
     const nro = dto.number ?? item.factura_numero ?? "-";
@@ -639,7 +452,6 @@ app.get("/v1/me/account", async (_req, res) => {
     const c = await anatodGetClienteById(DEMO_CLIENT_ID);
     const raw: any = (c as any).raw ?? {};
 
-    // Campos típicos del cliente (según tu JSON de ejemplo)
     const saldo = parseMoneyLike(raw.cliente_saldo);
     const mora = String(raw.cliente_mora ?? "").toUpperCase() === "Y";
     const mesesAtraso = Number(raw.cliente_meses_atraso ?? 0) || 0;
@@ -648,20 +460,15 @@ app.get("/v1/me/account", async (_req, res) => {
     const habilitacion = safeDate(raw.cliente_habilitacion);
     const corte = safeDate(raw.cliente_corte);
 
-    // Señales de “estado” (para UI)
     const status =
-      cortado
-        ? "CORTADO"
-        : mora || mesesAtraso > 0 || saldo > 0
-          ? "CON_DEUDA"
-          : "AL_DIA";
+      cortado ? "CORTADO" : mora || mesesAtraso > 0 || saldo > 0 ? "CON_DEUDA" : "AL_DIA";
 
     res.json({
       clientId: Number(DEMO_CLIENT_ID),
       anatodClientId: Number(c.clienteId),
 
-      status, // AL_DIA | CON_DEUDA | CORTADO
-      balance: saldo, // saldo numérico
+      status,
+      balance: saldo,
       currency: "ARS",
 
       inArrears: mora,
@@ -671,7 +478,6 @@ app.get("/v1/me/account", async (_req, res) => {
       habilitacionDate: habilitacion,
       lastCutDate: corte,
 
-      // Sin PII: nada de DNI, domicilio, teléfonos, etc.
       source: "anatod:/cliente/{id}",
     });
   } catch (err: any) {
@@ -759,7 +565,6 @@ app.get("/v1/me/purchase/financed", async (req, res) => {
     const official = c.financiable;
     const available = Math.max(official - reserved, 0);
 
-    // 3) Validación de cupo
     if (amount > available) {
       return res.status(409).json({
         ok: false,
@@ -771,7 +576,6 @@ app.get("/v1/me/purchase/financed", async (req, res) => {
       });
     }
 
-    // 4) Crear Order en Neon
     const orderId = `ord_${Date.now()}`;
     const order = await createOrder({
       id: orderId,
@@ -788,7 +592,6 @@ app.get("/v1/me/purchase/financed", async (req, res) => {
       description,
     });
 
-    // 5) Crear Reserva en Neon por el total
     const reservationId = `res_${Date.now()}`;
     const reservation = await createReservation({
       id: reservationId,
@@ -803,10 +606,8 @@ app.get("/v1/me/purchase/financed", async (req, res) => {
       amount,
     });
 
-    // 6) Calcular cuota (3 meses)
     const installment = Math.round((amount / 3) * 100) / 100;
 
-    // 7) Crear adicional real en anatod
     const adicionalRes = await createAriaAdditionalStrict({
       clientId: DEMO_CLIENT_ID,
       installmentValue: installment,
@@ -820,7 +621,6 @@ app.get("/v1/me/purchase/financed", async (req, res) => {
         status: adicionalRes.status,
       });
 
-      // 8) Consumir reserva (ya se creó el adicional OK)
       const consumed = await setReservationStatus(reservationId, "CONSUMED");
 
       await addOrderEvent(orderId, "RESERVATION_CONSUMED", {
@@ -828,7 +628,6 @@ app.get("/v1/me/purchase/financed", async (req, res) => {
         status: consumed?.status ?? "CONSUMED",
       });
 
-      // 9) Estado final de orden
       await setOrderStatus(orderId, "APLICADO");
       await addOrderEvent(orderId, "STATUS_UPDATED", { status: "APLICADO" });
 
@@ -841,7 +640,6 @@ app.get("/v1/me/purchase/financed", async (req, res) => {
       });
     }
 
-    // Si falla el adicional: dejamos reserva ACTIVE y orden EN_PROCESO
     await addOrderEvent(orderId, "ADICIONAL_FAILED", {
       status: adicionalRes.status,
       body: adicionalRes.bodyText.slice(0, 500),
