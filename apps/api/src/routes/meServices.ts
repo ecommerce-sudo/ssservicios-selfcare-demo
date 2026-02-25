@@ -13,16 +13,14 @@ type Options = {
 };
 
 export function registerMeServicesRoutes(app: Express, opts: Options) {
-  const DEMO_CLIENT_ID = opts.demoClientId;
-
   // ---------- Servicios (REAL: Internet + Telefonía + TV, best-effort) ----------
-  app.get("/v1/me/services", async (_req: Request, res: Response) => {
+  app.get("/v1/me/services", async (req: Request, res: Response) => {
     try {
-      // 1) Cliente real (para obtener anatodClientId)
-      const me = await anatodGetClienteById(DEMO_CLIENT_ID);
+      const clientId = Number(req.clientId ?? opts.demoClientId);
+
+      const me = await anatodGetClienteById(clientId);
       const anatodClientId = Number(me.clienteId);
 
-      // 2) Llamadas best-effort en paralelo
       const results = await Promise.allSettled([
         anatodListConexionesInternetByCliente(anatodClientId),
         anatodListConexionesTelefoniaByCliente(anatodClientId),
@@ -34,7 +32,6 @@ export function registerMeServicesRoutes(app: Express, opts: Options) {
       const errors: Array<{ type: string; message: string }> = [];
       const services: Array<any> = [];
 
-      // Internet
       if (internetRes.status === "fulfilled") {
         const list = Array.isArray(internetRes.value?.data) ? internetRes.value.data : [];
         const active = list.filter(
@@ -50,7 +47,6 @@ export function registerMeServicesRoutes(app: Express, opts: Options) {
         });
       }
 
-      // Telefonía
       if (phoneRes.status === "fulfilled") {
         const list = Array.isArray(phoneRes.value?.data) ? phoneRes.value.data : [];
         const active = list.filter((x: any) => {
@@ -60,13 +56,9 @@ export function registerMeServicesRoutes(app: Express, opts: Options) {
         });
         for (const item of active) services.push(mapConexionToServiceDTO(item, "PHONE"));
       } else {
-        errors.push({
-          type: "PHONE",
-          message: String(phoneRes.reason?.message ?? phoneRes.reason),
-        });
+        errors.push({ type: "PHONE", message: String(phoneRes.reason?.message ?? phoneRes.reason) });
       }
 
-      // TV
       if (tvRes.status === "fulfilled") {
         const list = Array.isArray(tvRes.value?.data) ? tvRes.value.data : [];
         const active = list.filter((x: any) => {
@@ -79,9 +71,8 @@ export function registerMeServicesRoutes(app: Express, opts: Options) {
         errors.push({ type: "TV", message: String(tvRes.reason?.message ?? tvRes.reason) });
       }
 
-      // 3) Respuesta consolidada
       res.json({
-        clientId: Number(DEMO_CLIENT_ID),
+        clientId,
         anatodClientId,
         services,
         source: "anatod:/cliente/{id}/conexiones/*",
