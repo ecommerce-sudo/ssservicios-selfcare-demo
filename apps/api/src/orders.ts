@@ -1,3 +1,4 @@
+// apps/api/src/orders.ts
 import { pool } from "./db.js";
 
 export type OrderStatus = "PENDIENTE" | "APLICADO" | "EN_PROCESO" | "FALLIDO";
@@ -30,6 +31,40 @@ export async function listOrdersByClient(clientId: number): Promise<OrderRow[]> 
     [clientId]
   );
   return rows;
+}
+
+/**
+ * ✅ NUEVO: idempotencia por client_id + idempotency_key (+ opcional type)
+ * Si existe, devolvemos la orden ya creada (evita doble click / retry).
+ */
+export async function findOrderByIdempotencyKey(input: {
+  clientId: number;
+  idempotencyKey: string;
+  type?: string;
+}): Promise<OrderRow | null> {
+  const key = String(input.idempotencyKey ?? "").trim();
+  if (!key) return null;
+
+  const params: any[] = [input.clientId, key];
+  const typeFilter = input.type ? "and type = $3" : "";
+  if (input.type) params.push(input.type);
+
+  const { rows } = await pool.query<OrderRow>(
+    `
+    select
+      id, client_id, type, status, conexion_id, previous_plan_id, target_plan_id,
+      ticket_id, idempotency_key, created_at, updated_at
+    from orders
+    where client_id = $1
+      and idempotency_key = $2
+      ${typeFilter}
+    order by created_at desc
+    limit 1
+    `,
+    params
+  );
+
+  return rows[0] ?? null;
 }
 
 export async function createOrder(input: {
