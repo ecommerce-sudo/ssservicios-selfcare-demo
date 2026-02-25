@@ -33,10 +33,6 @@ export async function listOrdersByClient(clientId: number): Promise<OrderRow[]> 
   return rows;
 }
 
-/**
- * ✅ NUEVO: idempotencia por client_id + idempotency_key (+ opcional type)
- * Si existe, devolvemos la orden ya creada (evita doble click / retry).
- */
 export async function findOrderByIdempotencyKey(input: {
   clientId: number;
   idempotencyKey: string;
@@ -148,30 +144,6 @@ export async function listPendingBuyFinancedByClient(clientId: number): Promise<
     limit 50
     `,
     [clientId]
-  );
-  return rows;
-}
-
-/**
- * NUEVO: trae BUY_FINANCED por múltiples estados (PENDIENTE, EN_PROCESO, etc.)
- */
-export async function listBuyFinancedByClientByStatuses(
-  clientId: number,
-  statuses: OrderStatus[]
-): Promise<OrderRow[]> {
-  const { rows } = await pool.query<OrderRow>(
-    `
-    select
-      id, client_id, type, status, conexion_id, previous_plan_id, target_plan_id,
-      ticket_id, idempotency_key, created_at, updated_at
-    from orders
-    where client_id = $1
-      and type = 'BUY_FINANCED'
-      and status = any($2::text[])
-    order by created_at desc
-    limit 50
-    `,
-    [clientId, statuses]
   );
   return rows;
 }
