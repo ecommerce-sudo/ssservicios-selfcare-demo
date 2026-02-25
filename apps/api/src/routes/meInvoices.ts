@@ -1,5 +1,6 @@
 // apps/api/src/routes/meInvoices.ts
 import type { Express, Request, Response } from "express";
+import rateLimit from "express-rate-limit";
 
 import {
   anatodGetClienteById,
@@ -37,6 +38,18 @@ function escapeHtml(input: any): string {
 }
 
 export function registerMeInvoicesRoutes(app: Express, opts: Options) {
+  const printLimiter = rateLimit({
+    windowMs: 5 * 60 * 1000, // 5 min
+    max: 60, // 60 requests por ventana por IP
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: {
+      ok: false,
+      error: "RATE_LIMITED",
+      detail: "Demasiadas solicitudes de impresión. Probá de nuevo en unos minutos.",
+    },
+  });
+
   // ---------- FACTURAS ----------
   app.get("/v1/me/invoices", async (req: Request, res: Response) => {
     try {
@@ -50,7 +63,6 @@ export function registerMeInvoicesRoutes(app: Express, opts: Options) {
       const raw = await anatodListFacturasByCliente(anatodClientId);
       const mapped = (raw.data ?? []).map(mapFacturaToDTO);
 
-      // Orden: vencimiento asc (null al final)
       mapped.sort((a: any, b: any) => {
         const ad = a.dueDate ? new Date(a.dueDate).getTime() : Number.POSITIVE_INFINITY;
         const bd = b.dueDate ? new Date(b.dueDate).getTime() : Number.POSITIVE_INFINITY;
@@ -106,7 +118,6 @@ export function registerMeInvoicesRoutes(app: Express, opts: Options) {
     }
   });
 
-  // Factura puntual (DTO)
   app.get("/v1/me/invoices/:facturaId", async (req: Request, res: Response) => {
     try {
       const clientId = Number(req.clientId ?? opts.demoClientId);
@@ -138,7 +149,7 @@ export function registerMeInvoicesRoutes(app: Express, opts: Options) {
   /**
    * ✅ PDF nativo (Anatod → S3) vía redirect
    */
-  app.get("/v1/me/invoices/:facturaId/print", async (req: Request, res: Response) => {
+  app.get("/v1/me/invoices/:facturaId/print", printLimiter, async (req: Request, res: Response) => {
     try {
       const clientId = Number(req.clientId ?? opts.demoClientId);
 
@@ -149,7 +160,6 @@ export function registerMeInvoicesRoutes(app: Express, opts: Options) {
         return res.status(400).json({ ok: false, error: "INVALID_FACTURA_ID" });
       }
 
-      // Validación de pertenencia
       const me = await anatodGetClienteById(clientId);
       const anatodClientId = Number(me.clienteId);
 
@@ -184,9 +194,6 @@ export function registerMeInvoicesRoutes(app: Express, opts: Options) {
     }
   });
 
-  /**
-   * ✅ Descarga comprobante HTML
-   */
   app.get("/v1/me/invoices/:facturaId/receipt", async (req: Request, res: Response) => {
     try {
       const clientId = Number(req.clientId ?? opts.demoClientId);
