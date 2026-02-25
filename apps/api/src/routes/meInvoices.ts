@@ -37,12 +37,12 @@ function escapeHtml(input: any): string {
 }
 
 export function registerMeInvoicesRoutes(app: Express, opts: Options) {
-  const DEMO_CLIENT_ID = opts.demoClientId;
-
   // ---------- FACTURAS ----------
   app.get("/v1/me/invoices", async (req: Request, res: Response) => {
     try {
-      const me = await anatodGetClienteById(DEMO_CLIENT_ID);
+      const clientId = Number(req.clientId ?? opts.demoClientId);
+
+      const me = await anatodGetClienteById(clientId);
       const anatodClientId = Number(me.clienteId);
 
       const limit = Math.min(Math.max(Number(req.query.limit ?? 10), 1), 50);
@@ -58,7 +58,7 @@ export function registerMeInvoicesRoutes(app: Express, opts: Options) {
       });
 
       res.json({
-        clientId: Number(DEMO_CLIENT_ID),
+        clientId,
         anatodClientId,
         invoices: mapped.slice(0, limit),
         source: "anatod:/cliente/{id}/facturas",
@@ -73,9 +73,11 @@ export function registerMeInvoicesRoutes(app: Express, opts: Options) {
     }
   });
 
-  app.get("/v1/me/invoices/next", async (_req: Request, res: Response) => {
+  app.get("/v1/me/invoices/next", async (req: Request, res: Response) => {
     try {
-      const me = await anatodGetClienteById(DEMO_CLIENT_ID);
+      const clientId = Number(req.clientId ?? opts.demoClientId);
+
+      const me = await anatodGetClienteById(clientId);
       const anatodClientId = Number(me.clienteId);
 
       const raw = await anatodListFacturasByCliente(anatodClientId);
@@ -89,7 +91,7 @@ export function registerMeInvoicesRoutes(app: Express, opts: Options) {
         );
 
       res.json({
-        clientId: Number(DEMO_CLIENT_ID),
+        clientId,
         anatodClientId,
         nextInvoice: candidates[0] ?? null,
         source: "anatod:/cliente/{id}/facturas",
@@ -107,6 +109,8 @@ export function registerMeInvoicesRoutes(app: Express, opts: Options) {
   // Factura puntual (DTO)
   app.get("/v1/me/invoices/:facturaId", async (req: Request, res: Response) => {
     try {
+      const clientId = Number(req.clientId ?? opts.demoClientId);
+
       const facturaId = String(req.params.facturaId ?? "").trim();
       if (!facturaId) return res.status(400).json({ ok: false, error: "MISSING_FACTURA_ID" });
 
@@ -117,7 +121,7 @@ export function registerMeInvoicesRoutes(app: Express, opts: Options) {
       const dto = mapFacturaToDTO(item);
 
       res.json({
-        clientId: Number(DEMO_CLIENT_ID),
+        clientId,
         invoice: dto,
         source: "anatod:/factura/{id}",
       });
@@ -132,22 +136,21 @@ export function registerMeInvoicesRoutes(app: Express, opts: Options) {
   });
 
   /**
-   * ✅ PDF nativo (Anatod → S3) vía redirect:
-   * - tu API NO proxynea bytes
-   * - NO expone API key
+   * ✅ PDF nativo (Anatod → S3) vía redirect
    */
   app.get("/v1/me/invoices/:facturaId/print", async (req: Request, res: Response) => {
     try {
+      const clientId = Number(req.clientId ?? opts.demoClientId);
+
       const facturaId = String(req.params.facturaId ?? "").trim();
       if (!facturaId) return res.status(400).json({ ok: false, error: "MISSING_FACTURA_ID" });
 
-      // sanity: demo only ids numéricos
       if (!/^\d+$/.test(facturaId)) {
         return res.status(400).json({ ok: false, error: "INVALID_FACTURA_ID" });
       }
 
-      // Validación de pertenencia (safe)
-      const me = await anatodGetClienteById(DEMO_CLIENT_ID);
+      // Validación de pertenencia
+      const me = await anatodGetClienteById(clientId);
       const anatodClientId = Number(me.clienteId);
 
       const rawList = await anatodListFacturasByCliente(anatodClientId);
@@ -182,15 +185,16 @@ export function registerMeInvoicesRoutes(app: Express, opts: Options) {
   });
 
   /**
-   * ✅ Descarga de “comprobante” sin dependencias:
-   * - retorna HTML como attachment (el usuario puede imprimir “Guardar como PDF”)
+   * ✅ Descarga comprobante HTML
    */
   app.get("/v1/me/invoices/:facturaId/receipt", async (req: Request, res: Response) => {
     try {
+      const clientId = Number(req.clientId ?? opts.demoClientId);
+
       const facturaId = String(req.params.facturaId ?? "").trim();
       if (!facturaId) return res.status(400).json({ ok: false, error: "MISSING_FACTURA_ID" });
 
-      const me = await anatodGetClienteById(DEMO_CLIENT_ID);
+      const me = await anatodGetClienteById(clientId);
 
       const raw = await anatodGetFacturaById(facturaId);
       const item = Array.isArray(raw) ? raw[0] : raw;
@@ -248,7 +252,7 @@ export function registerMeInvoicesRoutes(app: Express, opts: Options) {
       <div style="margin-top:14px;">
         <h1>Factura ${escapeHtml(tipo)} ${escapeHtml(String(ptoVta))}-${escapeHtml(String(nro))}</h1>
         <div class="muted">Factura ID: ${escapeHtml(facturaId)} · Cliente (Selfcare): ${escapeHtml(
-        String(DEMO_CLIENT_ID)
+        String(clientId)
       )} · Anatod: ${escapeHtml(String(me.clienteId))}</div>
       </div>
 
