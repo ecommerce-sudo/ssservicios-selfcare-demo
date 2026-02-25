@@ -6,7 +6,7 @@ import helmet from "helmet";
 export function createApp(): Express {
   const app = express();
 
-  // Config básica (igual a como estaba en index.ts)
+  // Config básica
   app.use(helmet());
   app.use(express.json({ limit: "1mb" }));
 
@@ -25,7 +25,8 @@ export function createApp(): Express {
     cors({
       origin: corsOrigins as any,
       methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-      allowedHeaders: ["Content-Type", "Authorization", "Idempotency-Key"],
+      // ✅ agregamos X-Client-Id para tu contexto de cliente
+      allowedHeaders: ["Content-Type", "Authorization", "Idempotency-Key", "X-Client-Id"],
     })
   );
 
