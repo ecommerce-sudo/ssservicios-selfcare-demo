@@ -6,6 +6,7 @@ import { createApp } from "./app.js";
 import {
   listOrdersByClient,
   createOrder,
+  findOrderByIdempotencyKey,
   addOrderEvent,
   setOrderStatus,
   listPendingBuyFinancedByClient,
@@ -30,26 +31,15 @@ import { withClientContext } from "./middleware/clientContext.js";
 
 dotenv.config();
 
-// Demo auth: por ahora fijamos clientId=66489.
-// Más adelante lo cambiamos por login real / token.
 const DEMO_CLIENT_ID = 66489;
 
-// ✅ Express bootstrap centralizado en app.ts
 const app = createApp();
-
-// ✅ Contexto de cliente (header X-Client-Id o fallback demo)
 app.use(withClientContext({ demoClientId: DEMO_CLIENT_ID }));
 
-// ---------- Staff (interno) ----------
 registerStaffRoutes(app);
-
-// ---------- Invoices ----------
 registerMeInvoicesRoutes(app, { demoClientId: DEMO_CLIENT_ID });
-
-// ---------- Services ----------
 registerMeServicesRoutes(app, { demoClientId: DEMO_CLIENT_ID });
 
-// ---------- Helpers ----------
 function parseMoneyLike(value: unknown): number {
   if (value === null || value === undefined) return 0;
   const s = String(value).trim();
@@ -64,7 +54,6 @@ function safeDate(value: any): string | null {
   return s;
 }
 
-// ---------- Healthcheck ----------
 app.get("/health", (_req, res) => {
   res.json({
     ok: true,
@@ -73,7 +62,6 @@ app.get("/health", (_req, res) => {
   });
 });
 
-// ---------- Perfil + cupo ----------
 app.get("/v1/me", async (req, res) => {
   try {
     const clientId = Number(req.clientId ?? DEMO_CLIENT_ID);
@@ -96,15 +84,10 @@ app.get("/v1/me", async (req, res) => {
     });
   } catch (err: any) {
     console.error(err);
-    res.status(502).json({
-      ok: false,
-      error: "ANATOD_ERROR",
-      detail: String(err?.message ?? err),
-    });
+    res.status(502).json({ ok: false, error: "ANATOD_ERROR", detail: String(err?.message ?? err) });
   }
 });
 
-// ---------- ESTADO DE CUENTA (Account Status) ----------
 app.get("/v1/me/account", async (req, res) => {
   try {
     const clientId = Number(req.clientId ?? DEMO_CLIENT_ID);
@@ -121,27 +104,19 @@ app.get("/v1/me/account", async (req, res) => {
     const corte = safeDate(raw.cliente_corte);
 
     const status =
-      cortado
-        ? "CORTADO"
-        : mora || mesesAtraso > 0 || saldo > 0
-          ? "CON_DEUDA"
-          : "AL_DIA";
+      cortado ? "CORTADO" : mora || mesesAtraso > 0 || saldo > 0 ? "CON_DEUDA" : "AL_DIA";
 
     res.json({
       clientId,
       anatodClientId: Number(c.clienteId),
-
       status,
       balance: saldo,
       currency: "ARS",
-
       inArrears: mora,
       monthsInArrears: mesesAtraso,
       cutOff: cortado,
-
       habilitacionDate: habilitacion,
       lastCutDate: corte,
-
       source: "anatod:/cliente/{id}",
     });
   } catch (err: any) {
@@ -167,14 +142,7 @@ app.get("/v1/me/reservations/demo-add", async (req, res) => {
     }
 
     const id = `res_${Date.now()}`;
-
-    const row = await createReservation({
-      id,
-      clientId,
-      amount,
-      status: "ACTIVE",
-    });
-
+    const row = await createReservation({ id, clientId, amount, status: "ACTIVE" });
     res.status(201).json({ ok: true, reservation: row });
   } catch (err: any) {
     console.error(err);
@@ -204,25 +172,17 @@ app.get("/v1/me/reservations", async (req, res) => {
     res.json({ clientId, reservations: rows });
   } catch (err: any) {
     console.error(err);
-    res.status(500).json({
-      ok: false,
-      error: "DB_ERROR",
-      detail: String(err?.message ?? err),
-    });
+    res.status(500).json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
   }
 });
 
-// ---------- Compra financiada ----------
+// ---------- Compra financiada (rate limit + idempotencia) ----------
 const purchaseLimiter = rateLimit({
-  windowMs: 5 * 60 * 1000, // 5 min
-  max: 6, // 6 requests por IP por ventana
+  windowMs: 5 * 60 * 1000,
+  max: 6,
   standardHeaders: true,
   legacyHeaders: false,
-  message: {
-    ok: false,
-    error: "RATE_LIMITED",
-    detail: "Demasiadas solicitudes de compra. Probá de nuevo en unos minutos.",
-  },
+  message: { ok: false, error: "RATE_LIMITED", detail: "Demasiadas solicitudes de compra." },
 });
 
 app.get("/v1/me/purchase/financed", purchaseLimiter, async (req, res) => {
@@ -231,7 +191,6 @@ app.get("/v1/me/purchase/financed", purchaseLimiter, async (req, res) => {
 
     const amountRaw = String(req.query.amount ?? "").trim();
     const descRaw = String(req.query.desc ?? "").trim();
-
     const amount = Number(amountRaw);
     const description = descRaw || `Compra App Demo - ${new Date().toISOString()}`;
 
@@ -239,14 +198,35 @@ app.get("/v1/me/purchase/financed", purchaseLimiter, async (req, res) => {
       return res.status(400).json({ ok: false, error: "INVALID_AMOUNT" });
     }
 
-    // 1) Cupo oficial (anatod) + 2) Reservas activas (Neon)
+    const idemKey = String(req.header("Idempotency-Key") ?? "").trim();
+
+    // ✅ 0) Idempotencia: si ya existe, devolvemos replay
+    if (idemKey) {
+      const existing = await findOrderByIdempotencyKey({
+        clientId,
+        idempotencyKey: idemKey,
+        type: "BUY_FINANCED",
+      });
+
+      if (existing) {
+        const events = await listOrderEvents(existing.id).catch(() => []);
+        return res.status(200).json({
+          ok: true,
+          idempotentReplay: true,
+          order: existing,
+          events,
+          status: existing.status,
+        });
+      }
+    }
+
+    // 1) Cupo + reservas
     const c = await anatodGetClienteById(clientId);
     const reserved = await sumActiveReservations(clientId);
 
     const official = c.financiable;
     const available = Math.max(official - reserved, 0);
 
-    // 3) Validación de cupo
     if (amount > available) {
       return res.status(409).json({
         ok: false,
@@ -258,7 +238,7 @@ app.get("/v1/me/purchase/financed", purchaseLimiter, async (req, res) => {
       });
     }
 
-    // 4) Crear Order en Neon
+    // 2) Crear Order
     const orderId = `ord_${Date.now()}`;
     const order = await createOrder({
       id: orderId,
@@ -266,16 +246,12 @@ app.get("/v1/me/purchase/financed", purchaseLimiter, async (req, res) => {
       type: "BUY_FINANCED",
       status: "PENDIENTE",
       conexionId: null,
-      idempotencyKey: req.header("Idempotency-Key") ?? null,
+      idempotencyKey: idemKey || null,
     });
 
-    await addOrderEvent(orderId, "CREATED", {
-      type: "BUY_FINANCED",
-      amount,
-      description,
-    });
+    await addOrderEvent(orderId, "CREATED", { type: "BUY_FINANCED", amount, description });
 
-    // 5) Crear Reserva en Neon por el total
+    // 3) Reserva
     const reservationId = `res_${Date.now()}`;
     const reservation = await createReservation({
       id: reservationId,
@@ -285,15 +261,11 @@ app.get("/v1/me/purchase/financed", purchaseLimiter, async (req, res) => {
       status: "ACTIVE",
     });
 
-    await addOrderEvent(orderId, "RESERVED_CREDIT", {
-      reservationId,
-      amount,
-    });
+    await addOrderEvent(orderId, "RESERVED_CREDIT", { reservationId, amount });
 
-    // 6) Calcular cuota (3 meses)
+    // 4) Adicional
     const installment = Math.round((amount / 3) * 100) / 100;
 
-    // 7) Crear adicional real en anatod
     const adicionalRes = await createAriaAdditionalStrict({
       clientId,
       installmentValue: installment,
@@ -307,15 +279,12 @@ app.get("/v1/me/purchase/financed", purchaseLimiter, async (req, res) => {
         status: adicionalRes.status,
       });
 
-      // 8) Consumir reserva (ya se creó el adicional OK)
       const consumed = await setReservationStatus(reservationId, "CONSUMED");
-
       await addOrderEvent(orderId, "RESERVATION_CONSUMED", {
         reservationId,
         status: consumed?.status ?? "CONSUMED",
       });
 
-      // 9) Estado final de orden
       await setOrderStatus(orderId, "APLICADO");
       await addOrderEvent(orderId, "STATUS_UPDATED", { status: "APLICADO" });
 
@@ -328,7 +297,6 @@ app.get("/v1/me/purchase/financed", purchaseLimiter, async (req, res) => {
       });
     }
 
-    // Si falla el adicional: dejamos reserva ACTIVE y orden EN_PROCESO
     await addOrderEvent(orderId, "ADICIONAL_FAILED", {
       status: adicionalRes.status,
       body: adicionalRes.bodyText.slice(0, 500),
@@ -343,19 +311,11 @@ app.get("/v1/me/purchase/financed", purchaseLimiter, async (req, res) => {
       order,
       reservation,
       status: "EN_PROCESO",
-      adicional: {
-        ok: false,
-        status: adicionalRes.status,
-        body: adicionalRes.bodyText.slice(0, 500),
-      },
+      adicional: { ok: false, status: adicionalRes.status, body: adicionalRes.bodyText.slice(0, 500) },
     });
   } catch (err: any) {
     console.error(err);
-    res.status(500).json({
-      ok: false,
-      error: "PURCHASE_FLOW_ERROR",
-      detail: String(err?.message ?? err),
-    });
+    res.status(500).json({ ok: false, error: "PURCHASE_FLOW_ERROR", detail: String(err?.message ?? err) });
   }
 });
 
@@ -363,7 +323,6 @@ app.get("/v1/me/purchase/financed", purchaseLimiter, async (req, res) => {
 app.get("/v1/me/orders/demo-create", async (req, res) => {
   try {
     const clientId = Number(req.clientId ?? DEMO_CLIENT_ID);
-
     const orderId = `ord_${Date.now()}`;
 
     const order = await createOrder({
@@ -376,7 +335,6 @@ app.get("/v1/me/orders/demo-create", async (req, res) => {
     });
 
     await addOrderEvent(orderId, "CREATED", { via: "demo_create_get" });
-
     res.status(201).json({ ok: true, order });
   } catch (err: any) {
     console.error(err);
@@ -425,22 +383,13 @@ app.get("/v1/me/orders/reconcile", async (req, res) => {
         await addOrderEvent(o.id, "STATUS_UPDATED", { status: "APLICADO", via: "reconcile" });
 
         updatedToApplied++;
-        touched.push({
-          orderId: o.id,
-          from: o.status,
-          to: "APLICADO",
-          reason: "adicional+reserva_consumida",
-        });
+        touched.push({ orderId: o.id, from: o.status, to: "APLICADO", reason: "adicional+reserva_consumida" });
         continue;
       }
 
       if (hasAdicionalFailed) {
         await setOrderStatus(o.id, "EN_PROCESO");
-        await addOrderEvent(o.id, "RECONCILED", {
-          from: o.status,
-          to: "EN_PROCESO",
-          rule: "ADICIONAL_FAILED",
-        });
+        await addOrderEvent(o.id, "RECONCILED", { from: o.status, to: "EN_PROCESO", rule: "ADICIONAL_FAILED" });
         await addOrderEvent(o.id, "STATUS_UPDATED", { status: "EN_PROCESO", via: "reconcile" });
 
         updatedToInProcess++;
@@ -459,15 +408,10 @@ app.get("/v1/me/orders/reconcile", async (req, res) => {
       updatedToInProcess,
       skipped,
       touched,
-      note: "Esta reconcile hoy solo mira BUY_FINANCED en PENDIENTE (por función actual). Si querés, la extendemos a EN_PROCESO también.",
     });
   } catch (err: any) {
     console.error(err);
-    res.status(500).json({
-      ok: false,
-      error: "RECONCILE_ERROR",
-      detail: String(err?.message ?? err),
-    });
+    res.status(500).json({ ok: false, error: "RECONCILE_ERROR", detail: String(err?.message ?? err) });
   }
 });
 
@@ -486,7 +430,6 @@ app.post("/v1/me/orders/demo", async (req, res) => {
     });
 
     await addOrderEvent(orderId, "CREATED", { via: "demo_endpoint" });
-
     res.status(201).json({ ok: true, order });
   } catch (err: any) {
     console.error(err);
