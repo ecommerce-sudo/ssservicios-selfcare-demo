@@ -131,7 +131,10 @@ function dueBadge(inv: { dueDate: string | null; issuedAt: string | null; status
 
   if (diffDays < 0) {
     const days = Math.abs(diffDays);
-    return { label: days === 1 ? "Vencida hace 1 día" : `Vencida hace ${days} días`, tone: "bad" as const };
+    return {
+      label: days === 1 ? "Vencida hace 1 día" : `Vencida hace ${days} días`,
+      tone: "bad" as const,
+    };
   }
   if (diffDays === 0) return { label: "Vence hoy", tone: "warn" as const };
   if (diffDays === 1) return { label: "Vence mañana", tone: "warn" as const };
@@ -174,13 +177,36 @@ function accountLabel(status: string) {
 }
 
 function makeIdempotencyKey(prefix = "purchase") {
-  // Browser moderno: crypto.randomUUID()
-  // Fallback: timestamp + random
   const uuid =
     typeof crypto !== "undefined" && "randomUUID" in crypto
       ? (crypto as any).randomUUID()
       : `${Date.now()}_${Math.random().toString(16).slice(2)}`;
   return `${prefix}-${uuid}`;
+}
+
+// ✅ Persistencia de Idempotency-Key por intento (sessionStorage)
+const PURCHASE_IDEM_STORAGE_KEY = "ssselfcare_purchase_idem_key";
+
+function getOrCreatePurchaseIdemKey(prefix = "buy-financed") {
+  try {
+    const existing = sessionStorage.getItem(PURCHASE_IDEM_STORAGE_KEY);
+    if (existing && existing.trim()) return existing.trim();
+
+    const created = makeIdempotencyKey(prefix);
+    sessionStorage.setItem(PURCHASE_IDEM_STORAGE_KEY, created);
+    return created;
+  } catch {
+    // fallback: si el browser bloquea storage
+    return makeIdempotencyKey(prefix);
+  }
+}
+
+function clearPurchaseIdemKey() {
+  try {
+    sessionStorage.removeItem(PURCHASE_IDEM_STORAGE_KEY);
+  } catch {
+    // ignore
+  }
 }
 
 export default function Page() {
@@ -219,8 +245,7 @@ export default function Page() {
 
     if (!res.ok) {
       const msg =
-        (data && (data.detail || data.error || data.message)) ||
-        `HTTP ${res.status} ${res.statusText}`;
+        (data && (data.detail || data.error || data.message)) || `HTTP ${res.status} ${res.statusText}`;
       throw new Error(`${msg} | url=${url}`);
     }
     return data;
@@ -290,7 +315,6 @@ export default function Page() {
   }, []);
 
   async function runPurchase() {
-    // evita doble click “a lo bruto”
     if (actionLoading === "purchase") return;
 
     setActionError(null);
@@ -301,15 +325,14 @@ export default function Page() {
       const amt = Number(String(amount).trim());
       if (!Number.isFinite(amt) || amt <= 0) throw new Error("Monto inválido");
 
-      const idemKey = makeIdempotencyKey("buy-financed");
+      // ✅ Reusar la misma key mientras la compra no termine OK
+      const idemKey = getOrCreatePurchaseIdemKey("buy-financed");
 
       const data = await fetchJSON("/v1/me/purchase/financed", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "Idempotency-Key": idemKey,
-          // si querés testear con otro cliente, acá podrías mandar:
-          // "X-Client-Id": String(me?.clientId ?? "")
         },
         body: JSON.stringify({
           amount: amt,
@@ -319,9 +342,15 @@ export default function Page() {
 
       setActionResult(data);
 
+      // ✅ Si salió OK, limpiamos la key para el próximo intento nuevo
+      if (data?.ok === true) {
+        clearPurchaseIdemKey();
+      }
+
       await Promise.all([loadMe(), loadServices(), loadNextInvoice(), loadAccount()]);
     } catch (e: any) {
       console.error(e);
+      // ⚠️ En error, NO limpiamos la key: así un retry reusa idemKey (y el backend hace replay)
       setActionError(String(e?.message ?? e));
     } finally {
       setActionLoading(null);
