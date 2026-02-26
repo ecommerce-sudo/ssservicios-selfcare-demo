@@ -5,12 +5,16 @@ import React from "react";
 import { Btn, Card, SectionTitle } from "../ui";
 
 type Props = {
+  brandColor: string;
+
+  enableAdmin: boolean;
   showAdmin: boolean;
   onToggleAdmin: () => void;
+
   openStore: () => void;
 };
 
-function MSIcon({ name, filled }: { name: string; filled?: boolean }) {
+function MSIcon({ name, filled, color }: { name: string; filled?: boolean; color: string }) {
   return (
     <span
       className="material-symbols-outlined"
@@ -19,7 +23,7 @@ function MSIcon({ name, filled }: { name: string; filled?: boolean }) {
         fontVariationSettings: `'FILL' ${filled ? 1 : 0}, 'wght' 600, 'GRAD' 0, 'opsz' 24`,
         fontSize: 22,
         lineHeight: 1,
-        color: "#7b00ff",
+        color,
       }}
     >
       {name}
@@ -54,7 +58,7 @@ function Item({
         gap: 8,
         padding: "14px 10px",
         borderRadius: 16,
-        border: "1px solid rgba(123,0,255,0.10)",
+        border: "1px solid rgba(15,23,42,0.08)",
         background: "#fff",
         boxShadow: "0 10px 24px rgba(0,0,0,0.06)",
         cursor: onClick ? "pointer" : "default",
@@ -63,7 +67,6 @@ function Item({
         minWidth: 0,
       }}
     >
-      {/* ✅ sin círculo contenedor: icono “libre” */}
       <div aria-hidden style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
         {icon}
       </div>
@@ -94,11 +97,16 @@ function Item({
   return content;
 }
 
-export default function QuickActionsCard({ showAdmin, onToggleAdmin, openStore }: Props) {
+export default function QuickActionsCard({
+  brandColor,
+  enableAdmin,
+  showAdmin,
+  onToggleAdmin,
+  openStore,
+}: Props) {
   const gridStyle: React.CSSProperties = {
     marginTop: 12,
     display: "grid",
-    // ✅ 2 cols mobile, 4 cols desktop
     gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
     gap: 10,
     width: "100%",
@@ -109,24 +117,26 @@ export default function QuickActionsCard({ showAdmin, onToggleAdmin, openStore }
     <Card>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, minWidth: 0 }}>
         <SectionTitle>Accesos rápidos</SectionTitle>
-        <Btn onClick={onToggleAdmin} title="Panel técnico (demo)">
-          {showAdmin ? "Ocultar admin" : "Mostrar admin"}
-        </Btn>
+
+        {enableAdmin ? (
+          <Btn onClick={onToggleAdmin} title="Panel técnico (demo)">
+            {showAdmin ? "Ocultar admin" : "Mostrar admin"}
+          </Btn>
+        ) : null}
       </div>
 
       <div style={gridStyle}>
-        <Item label="Facturas" icon={<MSIcon name="receipt_long" filled />} href="/invoices" />
+        <Item label="Facturas" icon={<MSIcon name="receipt_long" filled color={brandColor} />} href="/invoices" />
         <Item
           label="SSStore"
-          icon={<MSIcon name="shopping_bag" />}
+          icon={<MSIcon name="shopping_bag" color={brandColor} />}
           onClick={openStore}
           title="Abre SSStore en una pestaña nueva"
         />
-        <Item label="Soporte" icon={<MSIcon name="support_agent" />} href="/support" />
-        <Item label="Perfil" icon={<MSIcon name="person" />} title="Próximo: perfil y datos" />
+        <Item label="Soporte" icon={<MSIcon name="support_agent" color={brandColor} />} href="/support" />
+        <Item label="Perfil" icon={<MSIcon name="person" color={brandColor} />} title="Próximo: perfil y datos" />
       </div>
 
-      {/* ✅ media query simple inline: 4 cols si hay ancho suficiente */}
       <style jsx>{`
         @media (min-width: 640px) {
           div[style] > :global(div[style*="grid-template-columns"]) {
