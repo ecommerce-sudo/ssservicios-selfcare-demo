@@ -31,6 +31,12 @@ import { withClientContext } from "./middleware/clientContext.js";
 
 dotenv.config();
 
+type AppMode = "demo" | "prod";
+function getAppMode(): AppMode {
+  const raw = String(process.env.APP_MODE ?? "").trim().toLowerCase();
+  return raw === "prod" ? "prod" : "demo";
+}
+
 const DEMO_CLIENT_ID = 66489;
 
 const app = createApp();
@@ -119,35 +125,40 @@ app.get("/v1/me/account", async (req, res) => {
 });
 
 // ---------- Reservas ----------
-app.get("/v1/me/reservations/demo-add", async (req, res) => {
-  try {
-    const clientId = Number(req.clientId ?? DEMO_CLIENT_ID);
-    const amount = Number(String(req.query.amount ?? "").trim());
-    if (!Number.isFinite(amount) || amount <= 0) return res.status(400).json({ ok: false, error: "INVALID_AMOUNT" });
+const APP_MODE = getAppMode();
 
-    const id = `res_${Date.now()}`;
-    const row = await createReservation({ id, clientId, amount, status: "ACTIVE" });
-    res.status(201).json({ ok: true, reservation: row });
-  } catch (err: any) {
-    console.error(err);
-    res.status(500).json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
-  }
-});
+// ✅ DEMO ONLY endpoints: en prod NO se registran
+if (APP_MODE === "demo") {
+  app.get("/v1/me/reservations/demo-add", async (req, res) => {
+    try {
+      const clientId = Number(req.clientId ?? DEMO_CLIENT_ID);
+      const amount = Number(String(req.query.amount ?? "").trim());
+      if (!Number.isFinite(amount) || amount <= 0) return res.status(400).json({ ok: false, error: "INVALID_AMOUNT" });
 
-app.get("/v1/me/reservations/demo-release", async (req, res) => {
-  try {
-    const id = String(req.query.id ?? "").trim();
-    if (!id) return res.status(400).json({ ok: false, error: "MISSING_ID" });
+      const id = `res_${Date.now()}`;
+      const row = await createReservation({ id, clientId, amount, status: "ACTIVE" });
+      res.status(201).json({ ok: true, reservation: row });
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
+    }
+  });
 
-    const updated = await setReservationStatus(id, "RELEASED");
-    if (!updated) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+  app.get("/v1/me/reservations/demo-release", async (req, res) => {
+    try {
+      const id = String(req.query.id ?? "").trim();
+      if (!id) return res.status(400).json({ ok: false, error: "MISSING_ID" });
 
-    res.json({ ok: true, reservation: updated });
-  } catch (err: any) {
-    console.error(err);
-    res.status(500).json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
-  }
-});
+      const updated = await setReservationStatus(id, "RELEASED");
+      if (!updated) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+
+      res.json({ ok: true, reservation: updated });
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ ok: false, error: "DB_ERROR", detail: String(err?.message ?? err) });
+    }
+  });
+}
 
 app.get("/v1/me/reservations", async (req, res) => {
   try {
@@ -247,7 +258,6 @@ async function handlePurchaseFinanced(req: any, res: any) {
   });
 }
 
-// Legacy GET (demo)
 app.get("/v1/me/purchase/financed", purchaseLimiter, (req, res) => {
   handlePurchaseFinanced(req, res).catch((err: any) => {
     console.error(err);
@@ -255,7 +265,6 @@ app.get("/v1/me/purchase/financed", purchaseLimiter, (req, res) => {
   });
 });
 
-// Pro POST (prod-friendly)
 app.post("/v1/me/purchase/financed", purchaseLimiter, (req, res) => {
   handlePurchaseFinanced(req, res).catch((err: any) => {
     console.error(err);
@@ -316,4 +325,4 @@ app.get("/v1/me/orders/reconcile", async (req, res) => {
 });
 
 const PORT = Number(process.env.PORT || 3001);
-app.listen(PORT, "0.0.0.0", () => console.log(`[api] listening on http://0.0.0.0:${PORT}`));
+app.listen(PORT, "0.0.0.0", () => console.log(`[api] listening on http://0.0.0.0:${PORT} mode=${APP_MODE}`));
