@@ -13,6 +13,8 @@ type ServiceRow = {
 };
 
 type Props = {
+  brandColor: string;
+
   servicesTop3: ServiceRow[];
   loadingServices: boolean;
   onRefresh: () => void;
@@ -24,7 +26,7 @@ type Props = {
   rowCardStyle: React.CSSProperties;
 };
 
-function MSIcon({ name, filled }: { name: string; filled?: boolean }) {
+function MSIcon({ name, filled, color }: { name: string; filled?: boolean; color: string }) {
   return (
     <span
       className="material-symbols-outlined"
@@ -33,7 +35,7 @@ function MSIcon({ name, filled }: { name: string; filled?: boolean }) {
         fontVariationSettings: `'FILL' ${filled ? 1 : 0}, 'wght' 600, 'GRAD' 0, 'opsz' 24`,
         fontSize: 20,
         lineHeight: 1,
-        color: "#7b00ff",
+        color,
       }}
     >
       {name}
@@ -48,6 +50,7 @@ function serviceIconName(type: string) {
 }
 
 export default function ServicesCard({
+  brandColor,
   servicesTop3,
   loadingServices,
   onRefresh,
@@ -90,15 +93,15 @@ export default function ServicesCard({
                     width: 34,
                     height: 34,
                     borderRadius: 12,
-                    background: "rgba(123, 0, 255, 0.12)",
-                    border: "1px solid rgba(123, 0, 255, 0.22)",
+                    background: "rgba(15, 23, 42, 0.04)",
+                    border: "1px solid rgba(15, 23, 42, 0.10)",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
                     flex: "0 0 auto",
                   }}
                 >
-                  <MSIcon name={serviceIconName(s.type)} filled />
+                  <MSIcon name={serviceIconName(s.type)} filled color={brandColor} />
                 </div>
 
                 <div style={{ minWidth: 0, flex: "1 1 auto" }}>
