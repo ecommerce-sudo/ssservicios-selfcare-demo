@@ -18,6 +18,7 @@ type Props = {
 
   brand: string;
   apiBase: string;
+  showApiBase: boolean;
 
   benefitWrapStyle: React.CSSProperties;
   tierBadgeStyle: React.CSSProperties;
@@ -38,6 +39,7 @@ export default function BenefitCard({
   me,
   brand,
   apiBase,
+  showApiBase,
   benefitWrapStyle,
   tierBadgeStyle,
   benefitAmountStyle,
@@ -51,7 +53,16 @@ export default function BenefitCard({
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
         <SectionTitle>Beneficio disponible</SectionTitle>
 
-        <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 900, fontSize: 12, color: "#0f172a" }}>
+        <div
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            fontWeight: 900,
+            fontSize: 12,
+            color: "#0f172a",
+          }}
+        >
           <span style={{ width: 10, height: 10, borderRadius: 99, background: accent }} />
           {tier}
         </div>
@@ -118,10 +129,20 @@ export default function BenefitCard({
           <span>{me ? `${fmtMoney(me.purchaseAvailable)} ${currency}` : "—"}</span>
         </div>
 
-        <div style={{ marginTop: 10, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-          <span style={{ fontSize: 12, opacity: 0.7 }}>API base</span>
-          <code style={{ fontSize: 12, opacity: 0.9 }}>{apiBase}</code>
-        </div>
+        {showApiBase ? (
+          <div
+            style={{
+              marginTop: 10,
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: 12,
+            }}
+          >
+            <span style={{ fontSize: 12, opacity: 0.7 }}>API base</span>
+            <code style={{ fontSize: 12, opacity: 0.9 }}>{apiBase}</code>
+          </div>
+        ) : null}
       </div>
 
       {actionError ? (
