@@ -69,9 +69,6 @@ type AccountResponse = {
 const DEFAULT_API_BASE = "https://ssservicios-selfcare-demo.onrender.com";
 const DEFAULT_STORE_URL = "https://ssstore.com.ar";
 
-// violeta
-const BRAND = "#7b00ff";
-
 // ✅ Persistencia de Idempotency-Key por intento (sessionStorage) + expiración
 const PURCHASE_IDEM_STORAGE_KEY = "ssselfcare_purchase_idem_key";
 const PURCHASE_IDEM_STORAGE_TS = "ssselfcare_purchase_idem_ts";
@@ -197,18 +194,15 @@ function getOrCreatePurchaseIdemKey(prefix = "buy-financed") {
 
     const now = Date.now();
 
-    // si existe y no expiró, reutilizar
     if (existingKey && Number.isFinite(ts) && ts > 0 && now - ts < PURCHASE_IDEM_TTL_MS) {
       return existingKey;
     }
 
-    // si existe pero expiró, regenerar
     const created = makeIdempotencyKey(prefix);
     sessionStorage.setItem(PURCHASE_IDEM_STORAGE_KEY, created);
     sessionStorage.setItem(PURCHASE_IDEM_STORAGE_TS, String(now));
     return created;
   } catch {
-    // fallback si storage está bloqueado
     return makeIdempotencyKey(prefix);
   }
 }
@@ -226,6 +220,14 @@ export default function Page() {
   const API_BASE = useMemo(() => process.env.NEXT_PUBLIC_API_BASE_URL || DEFAULT_API_BASE, []);
   const STORE_URL = useMemo(() => process.env.NEXT_PUBLIC_STORE_URL || DEFAULT_STORE_URL, []);
 
+  const BRAND = useMemo(() => {
+    const v = (process.env.NEXT_PUBLIC_BRAND_COLOR || "").trim();
+    return v || "#7b00ff";
+  }, []);
+
+  const ENABLE_ADMIN = useMemo(() => process.env.NEXT_PUBLIC_ENABLE_ADMIN === "true", []);
+  const SHOW_API_BASE = useMemo(() => process.env.NEXT_PUBLIC_SHOW_API_BASE === "true", []);
+
   const [me, setMe] = useState<MeResponse | null>(null);
   const [services, setServices] = useState<ServiceRow[]>([]);
   const [nextInvoice, setNextInvoice] = useState<NextInvoiceDTO | null>(null);
@@ -242,7 +244,6 @@ export default function Page() {
   const [actionResult, setActionResult] = useState<any>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  // ✅ Mensaje “informativo” (no error)
   const [actionNotice, setActionNotice] = useState<string | null>(null);
 
   const [showAdmin, setShowAdmin] = useState(false);
@@ -342,7 +343,6 @@ export default function Page() {
       const amt = Number(String(amount).trim());
       if (!Number.isFinite(amt) || amt <= 0) throw new Error("Monto inválido");
 
-      // ✅ Reusar key mientras no termine OK (y expira a los 10 min)
       const idemKey = getOrCreatePurchaseIdemKey("buy-financed");
 
       const data = await fetchJSON("/v1/me/purchase/financed", {
@@ -359,12 +359,10 @@ export default function Page() {
 
       setActionResult(data);
 
-      // ✅ UX: si fue replay, avisar
       if (data?.idempotentReplay === true) {
         setActionNotice("Reintento detectado: la compra ya estaba procesada. Te muestro el resultado.");
       }
 
-      // ✅ Si salió OK, limpiamos key para el próximo intento nuevo
       if (data?.ok === true) {
         clearPurchaseIdemKey();
       }
@@ -372,7 +370,6 @@ export default function Page() {
       await Promise.all([loadMe(), loadServices(), loadNextInvoice(), loadAccount()]);
     } catch (e: any) {
       console.error(e);
-      // ⚠️ En error, NO limpiamos la key: retry reusa idemKey (y backend hace replay)
       setActionError(String(e?.message ?? e));
     } finally {
       setActionLoading(null);
@@ -531,12 +528,18 @@ export default function Page() {
           />
 
           <QuickActionsCard
-            showAdmin={showAdmin}
-            onToggleAdmin={() => setShowAdmin((v) => !v)}
+            brandColor={BRAND}
+            enableAdmin={ENABLE_ADMIN}
+            showAdmin={ENABLE_ADMIN ? showAdmin : false}
+            onToggleAdmin={() => {
+              if (!ENABLE_ADMIN) return;
+              setShowAdmin((v) => !v);
+            }}
             openStore={openStore}
           />
 
           <ServicesCard
+            brandColor={BRAND}
             servicesTop3={servicesTop3}
             loadingServices={loadingServices}
             onRefresh={loadServices}
@@ -562,6 +565,7 @@ export default function Page() {
             }
             brand={BRAND}
             apiBase={API_BASE}
+            showApiBase={SHOW_API_BASE}
             benefitWrapStyle={benefitWrap}
             tierBadgeStyle={tierBadge}
             benefitAmountStyle={benefitAmount}
@@ -571,7 +575,7 @@ export default function Page() {
             actionError={actionError}
           />
 
-          {showAdmin ? (
+          {ENABLE_ADMIN && showAdmin ? (
             <AdminPanel
               amount={amount}
               desc={desc}
